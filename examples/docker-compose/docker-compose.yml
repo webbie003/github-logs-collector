@@ -1,0 +1,128 @@
+services:
+  github-logs-collector:
+    image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.1.1}
+
+    container_name: github-logs-collector
+
+    restart: unless-stopped
+
+    # Security / reliability:
+    # Uses a minimal init process to correctly forward signals
+    # and reap child processes from Gunicorn.
+    init: true
+
+    # Security:
+    # Environment values are kept outside the Compose file.
+    # Never commit the real .env file to source control.
+    env_file:
+      - .env
+
+    # Configuration:
+    # Defaults can be overridden by values supplied through .env
+    # or the shell environment.
+    environment:
+      MAX_CONTENT_LENGTH: ${MAX_CONTENT_LENGTH:-5242880}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+    # Security:
+    # Defaults to localhost so the service is not accidentally
+    # exposed on every host interface.
+    ports:
+      - "${COLLECTOR_BIND_IP:-127.0.0.1}:8080:8080/tcp"
+
+    # Security:
+    # Only the persistent log directory should be writable.
+    volumes:
+      - github_logs:/var/log/github
+
+    # Configuration:
+    # Docker Compose creates a default network automatically.
+    #
+    # If the collector must communicate directly with an existing SIEM
+    # container network, uncomment this section and replace <SIEM_NETWORK>
+    # with the appropriate Docker network name.
+    #
+    # networks:
+    #   - <SIEM_NETWORK>
+
+    # Security:
+    # Prevent processes inside the container from gaining
+    # additional Linux privileges.
+    security_opt:
+      - no-new-privileges:true
+
+    # Security:
+    # The application requires no Linux capabilities.
+    cap_drop:
+      - ALL
+
+    # Security:
+    # Make the container root filesystem immutable.
+    read_only: true
+
+    # Security:
+    # Provide only a small in-memory writable /tmp.
+    tmpfs:
+      - /tmp:size=16M,mode=1777
+
+    # Security:
+    # Prevent excessive process creation.
+    pids_limit: 100
+
+    # Security / availability:
+    # Bound resource usage if the service is abused.
+    mem_limit: 128m
+    cpus: 0.50
+
+    # Reliability:
+    # Allow Gunicorn workers to exit cleanly.
+    stop_grace_period: 30s
+
+    # Security / operations:
+    # Prevent Docker JSON logs from growing indefinitely.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+    # Reliability:
+    # Verify that the application is responding without exposing
+    # sensitive configuration or application details.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Security:
+    # The collector is a non-interactive service and does not require
+    # stdin or a pseudo-terminal.
+    stdin_open: false
+    tty: false
+
+
+volumes:
+  github_logs:
+
+
+# Configuration:
+# Optional external SIEM network.
+#
+# Uncomment this section only when the collector needs to attach
+# directly to an existing Docker network used by the SIEM solution.
+#
+# Replace <SIEM_NETWORK> with the existing Docker network name.
+# The network must already exist because external: true prevents
+# Docker Compose from creating it.
+#
+# networks:
+#   <SIEM_NETWORK>:
+#     external: true

@@ -1,0 +1,20 @@
+# Security:
+# Never commit environment files containing real secrets.
+.env
+.env.*
+
+# Explicitly allow the public example configuration.
+!.env.example
+
+# Python.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Logs.
+*.log
+
+# Editors / operating systems.
+.vscode/
+.idea/
+.DS_Store

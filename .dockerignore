@@ -1,0 +1,28 @@
+# Security:
+# Never copy local environment files containing secrets into the image.
+.env
+.env.*
+
+# Source-control metadata is unnecessary inside the image.
+.git
+.gitignore
+.github
+
+# Development and test files are not required at runtime.
+tests/
+examples/
+
+# Python temporary/cache files.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Documentation and local editor metadata.
+README.md
+SECURITY.md
+LICENSE
+.vscode/
+.idea/
+
+# Local logs.
+*.log
