@@ -1,694 +1,279 @@
 # GitHub Logs Collector
 
-A lightweight, security-focused GitHub webhook collector that validates signed GitHub events and writes structured JSONL for ingestion by SIEM and log-management platforms.
+A Docker-based collector for retrieving GitHub account, repository, audit/security, Dependabot, code scanning, and secret scanning events and forwarding them into a central logging/SIEM workflow.
 
-The collector is intentionally **SIEM-neutral**. It can be used with Wazuh, Splunk, Elastic, Graylog, Fluent Bit, Vector, or any other platform capable of ingesting JSONL log data.
+## Purpose
 
-## Features
+`github-logs-collector` is intended to provide central visibility of GitHub activity and repository security events.
 
-* GitHub webhook ingestion
-* HMAC-SHA256 webhook signature validation
-* Constant-time signature comparison
-* Structured newline-delimited JSON output
-* Preserves the original GitHub webhook payload
-* Normalised event metadata for easier SIEM searching
-* Maximum request-body limits
-* JSON-only webhook processing
-* Metadata length validation
-* Gunicorn production application server
-* Runs as a dedicated non-root user
-* Supports read-only container root filesystem
-* Linux capabilities can be completely dropped
-* `no-new-privileges` support
-* CPU, memory, PID, and log-rotation controls
-* Built-in health endpoint
-* Docker Compose deployment example
-* Wazuh integration examples
-* No dependency on a specific SIEM platform
+Typical use cases include:
 
----
-
-## Architecture
-
-```mermaid
-flowchart TD
-    GH[GitHub]
-
-    RP[Reverse Proxy / TLS Endpoint]
-
-    COLLECTOR[GitHub Logs Collector<br/>Flask + Gunicorn]
-
-    LOG[(JSONL Event Log<br/>/var/log/github/events.jsonl)]
-
-    WAZUH[Wazuh]
-    SPLUNK[Splunk]
-    ELASTIC[Elastic]
-    GRAYLOG[Graylog]
-    FLUENT[Fluent Bit]
-    OTHER[Other SIEM / Log Platforms]
-
-    GH -->|HTTPS Webhook| RP
-    RP -->|HTTP on trusted/private network| COLLECTOR
-    COLLECTOR -->|Validated JSONL events| LOG
-
-    LOG --> WAZUH
-    LOG --> SPLUNK
-    LOG --> ELASTIC
-    LOG --> GRAYLOG
-    LOG --> FLUENT
-    LOG --> OTHER
-```
-
-The recommended deployment model terminates TLS at a trusted reverse proxy and keeps the collector itself on a private or trusted network.
-
----
+- Repository activity monitoring
+- GitHub security event collection
+- Dependabot alert monitoring
+- Code scanning alert monitoring
+- Secret scanning alert monitoring
+- Centralised logging into Wazuh or another SIEM
+- Security investigation and historical review
 
 ## Security Model
 
-The collector is designed as an internet-facing security-sensitive service.
+The collector should use a dedicated GitHub credential with only the permissions required for the configured monitoring functions.
 
-Security controls are implemented at both the application and container layers.
+Do not place GitHub credentials directly in source files or commit them to the repository.
 
-### Webhook Authentication
+Use environment variables, Docker secrets, or another protected secret-management mechanism.
 
-GitHub webhook requests are validated using the `X-Hub-Signature-256` header.
+## GitHub Repository Security Features
 
-The collector:
+The collector can only retrieve security alerts for features that are enabled and available for the repository.
 
-1. Reads the original raw HTTP request body.
-2. Calculates an HMAC-SHA256 digest using the configured webhook secret.
-3. Compares the calculated signature using `hmac.compare_digest()`.
-4. Rejects unsigned or incorrectly signed webhook requests.
-5. Processes and writes an event only after authentication succeeds.
+The following features should be considered for repositories that are to be monitored:
 
-### Request Validation
+- Dependabot alerts
+- Secret scanning
+- Push protection
+- Code scanning / CodeQL
 
-The application:
+### Existing repositories
 
-* Accepts only JSON webhook requests.
-* Enforces a configurable maximum request-body size.
-* Validates GitHub event names.
-* Restricts metadata field lengths.
-* Rejects malformed JSON.
-* Requires webhook payloads to contain a JSON object.
+Enabling security features for future repositories does not guarantee that they are enabled on repositories that already exist.
 
-### Secret Protection
+**Each existing repository that should be monitored must be reviewed individually.**
 
-The GitHub webhook secret is supplied at runtime and must not be stored in:
+For each existing repository:
 
-* Source code
-* Git repositories
-* Container images
-* Application logs
+1. Open the repository in GitHub.
+2. Select **Settings**.
+3. Open **Advanced Security** or **Code security and analysis**, depending on the GitHub interface.
+4. Enable the required features where available:
+   - Dependabot alerts
+   - Secret scanning
+   - Push protection
+   - Code scanning / CodeQL
+5. Repeat for every existing repository that should be monitored.
 
-Generate a strong webhook secret with:
+For full setup guidance, see [GITHUB_SECURITY_SETUP.md](GITHUB_SECURITY_SETUP.md).
 
-```bash
-openssl rand -hex 32
-```
+## SECURITY.md
 
-### Container Hardening
+A `SECURITY.md` file publishes the repository's vulnerability-reporting policy.
 
-The recommended Docker Compose configuration uses:
+It does **not** enable:
 
-* Dedicated non-root UID/GID
-* `no-new-privileges:true`
-* `cap_drop: ALL`
-* Read-only root filesystem
-* Restricted writable log volume
-* Memory-backed `/tmp`
-* Process limits
-* CPU limits
-* Memory limits
-* Docker log rotation
-* No interactive stdin
-* No pseudo-terminal
-* Minimal init process
-* Health monitoring
+- Dependabot alerts
+- Secret scanning
+- Push protection
+- Code scanning
 
----
+These GitHub security features are configured separately.
 
-## Repository Layout
+## Typical Collector Messages
+
+If a repository security feature is disabled or unavailable, the collector may record messages similar to:
 
 ```text
-github-logs-collector/
-├── app/
-│   └── github_listener.py
-│
-├── examples/
-│   ├── docker-compose/
-│   │   ├── docker-compose.yml
-│   │   └── .env.example
-│   │
-│   └── wazuh/
-│       ├── local_rules.xml
-│       └── ossec-localfile.xml
-│
-├── tests/
-├── Dockerfile
-├── requirements.txt
-├── .dockerignore
-├── .gitignore
-├── README.md
-├── SECURITY.md
-└── LICENSE
+Security API request failed repository=<owner>/<repo> type=dependabot error=HTTPError
 ```
-
----
-
-## Requirements
-
-For container deployment:
-
-* Docker
-* Docker Compose v2
-* A GitHub repository or organisation where webhook configuration is permitted
-* An HTTPS endpoint reachable by GitHub for production webhook delivery
-
-A reverse proxy such as nginx, Caddy, Traefik, HAProxy, or another ingress solution is recommended for TLS termination.
-
----
-
-## Quick Start
-
-Clone the repository:
-
-```bash
-git clone git@github.com:webbie003/github-logs-collector.git
-
-cd github-logs-collector
-```
-
-Copy the example environment file:
-
-```bash
-cp examples/docker-compose/.env.example \
-   examples/docker-compose/.env
-```
-
-Generate a webhook secret:
-
-```bash
-openssl rand -hex 32
-```
-
-Edit:
 
 ```text
-examples/docker-compose/.env
+Skipping unavailable security API repository=<owner>/<repo> type=code_scanning status=404
 ```
-
-and replace:
-
-```env
-GITHUB_WEBHOOK_SECRET=CHANGE_ME
-```
-
-with the generated value.
-
-Then start the collector:
-
-```bash
-cd examples/docker-compose
-
-docker compose up -d
-```
-
-Check the container:
-
-```bash
-docker compose ps
-```
-
-Check the health endpoint:
-
-```bash
-curl http://127.0.0.1:8080/health
-```
-
-Expected response:
-
-```json
-{"status":"healthy"}
-```
-
----
-
-## Environment Configuration
-
-Example:
-
-```env
-COLLECTOR_VERSION=0.1.1
-
-COLLECTOR_BIND_IP=127.0.0.1
-
-GITHUB_WEBHOOK_SECRET=CHANGE_ME
-
-GITHUB_WEBHOOK_LOG=/var/log/github/events.jsonl
-
-MAX_CONTENT_LENGTH=5242880
-
-LOG_LEVEL=INFO
-```
-
-### Configuration Variables
-
-| Variable                | Description                                           | Default                        |
-| ----------------------- | ----------------------------------------------------- | ------------------------------ |
-| `COLLECTOR_VERSION`     | Container image version                               | `0.1.1`                        |
-| `COLLECTOR_BIND_IP`     | Docker host interface used to publish port 8080       | `127.0.0.1`                    |
-| `GITHUB_WEBHOOK_SECRET` | Secret used to authenticate GitHub webhook deliveries | Required                       |
-| `GITHUB_WEBHOOK_LOG`    | JSONL event log location                              | `/var/log/github/events.jsonl` |
-| `MAX_CONTENT_LENGTH`    | Maximum accepted HTTP request body in bytes           | `5242880`                      |
-| `LOG_LEVEL`             | Application logging verbosity                         | `INFO`                         |
-
-### Bind Address
-
-The example defaults to:
-
-```env
-COLLECTOR_BIND_IP=127.0.0.1
-```
-
-This prevents the collector from accidentally being exposed on every network interface.
-
-If direct LAN access is required, use a specific server address:
-
-```env
-COLLECTOR_BIND_IP=10.1.1.1
-```
-
-Avoid publishing the collector directly to `0.0.0.0` unless the network exposure is intentional and adequately protected.
-
----
-
-## Docker Deployment
-
-The example Docker Compose deployment is located at:
 
 ```text
-examples/docker-compose/
+Skipping unavailable security API repository=<owner>/<repo> type=secret_scanning status=404
 ```
 
-The container image is expected to be published as:
+These messages do not automatically mean the collector itself is faulty.
+
+Confirm the repository feature state and collector credential permissions first.
+
+A repository can be successfully discovered and enumerated by the collector while one or more security APIs remain unavailable.
+
+For example:
 
 ```text
-ghcr.io/webbie003/github-logs-collector
+repository=webbie003/github-logs-collector type=dependabot
 ```
 
-Example:
+confirms that the repository is being processed by the collector.
 
-```yaml
-services:
-  github-logs-collector:
-    image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.1.1}
-```
+A subsequent Dependabot, code scanning, or secret scanning API error relates to the availability of that particular security service rather than repository discovery.
 
-The hardened Compose example also applies:
+## Recommended GitHub Credential Permissions
 
-```yaml
-security_opt:
-  - no-new-privileges:true
+For a fine-grained GitHub personal access token, use only the permissions required by your deployment.
 
-cap_drop:
-  - ALL
-
-read_only: true
-
-pids_limit: 100
-
-mem_limit: 128m
-
-cpus: 0.50
-
-stdin_open: false
-tty: false
-```
-
----
-
-## Existing SIEM Docker Networks
-
-Docker Compose creates a default network automatically.
-
-If the collector must communicate directly with containers on an existing SIEM Docker network, attach it to that network.
-
-Example service configuration:
-
-```yaml
-networks:
-  - wazuh-backend
-```
-
-Then declare the existing network:
-
-```yaml
-networks:
-  wazuh-backend:
-    external: true
-```
-
-The network must already exist when `external: true` is used.
-
-For log-file based ingestion, direct network connectivity between the collector and SIEM may not be required.
-
----
-
-## GitHub Webhook Configuration
-
-Configure a webhook for the repository or organisation you want to monitor.
-
-Use:
+Common read permissions include:
 
 ```text
-Payload URL:
-https://YOUR_PUBLIC_HOST/github-webhook
-
-Content type:
-application/json
-
-Secret:
-Same value as GITHUB_WEBHOOK_SECRET
-
-SSL verification:
-Enabled
+Metadata                  Read
+Contents                  Read
+Dependabot alerts         Read
+Code scanning alerts      Read
+Secret scanning alerts    Read
 ```
 
-For initial testing, select the required GitHub event types.
+Repository access should include only the repositories that the collector is intended to monitor, unless monitoring all repositories is an explicit requirement.
 
-The collector receives events through:
+Do not grant write access unless a documented collector function requires it.
+
+## Collector Error Logging
+
+Security API errors should include the HTTP status code where possible.
+
+Preferred logging:
 
 ```text
-POST /github-webhook
+Security API request failed repository=<owner>/<repo> type=dependabot status=403 message="Resource not accessible by personal access token"
 ```
 
-and validates the GitHub HMAC signature before storing the event.
-
----
-
-## Event Processing
-
-The processing flow is:
+rather than only:
 
 ```text
-GitHub webhook
-      |
-      v
-Validate content type
-      |
-      v
-Read raw request body
-      |
-      v
-Verify HMAC-SHA256 signature
-      |
-      v
-Validate GitHub metadata
-      |
-      v
-Parse JSON payload
-      |
-      v
-Normalise common fields
-      |
-      v
-Write one JSON object per line
-      |
-      v
-SIEM / Log Platform
+Security API request failed repository=<owner>/<repo> type=dependabot error=HTTPError
 ```
 
-Unsigned or incorrectly signed events are rejected and are not written to the event log.
+Capturing the HTTP response status makes troubleshooting significantly easier.
 
----
-
-## Log Output
-
-By default, events are written to:
+Typical interpretations include:
 
 ```text
-/var/log/github/events.jsonl
+401  Authentication failed or invalid credential
+403  Permission, policy, feature access, or rate-limit issue
+404  Resource or security feature unavailable/not enabled
 ```
 
-The format is newline-delimited JSON.
+The exact meaning depends on the GitHub API being queried.
 
-Example:
+## Docker Security
 
-```json
-{
-  "@timestamp": "2026-08-12T03:00:00+00:00",
-  "source": {
-    "type": "github",
-    "transport": "webhook"
-  },
-  "github": {
-    "event": "push",
-    "delivery_id": "12345678-abcd-1234-abcd-123456789abc",
-    "hook_id": "123456789",
-    "repository": "example/example-repository",
-    "organization": null,
-    "sender": "example-user",
-    "action": null
-  },
-  "payload": {
-    "...": "Original GitHub webhook payload"
-  }
-}
-```
+Recommended container controls include:
 
-The actual file contains one complete JSON object per physical line.
+- Run with the minimum required privileges
+- `no-new-privileges:true`
+- Do not mount the Docker socket unless strictly required
+- Set CPU, memory, and PID limits where practical
+- Keep secrets outside the image and source repository
+- Use a dedicated Docker network where practical
+- Keep the image and dependencies patched
+- Prefer pinned image versions or digests for production deployments
+- Restrict filesystem write access where practical
+- Avoid unnecessary Linux capabilities
+- Protect collector logs because they may contain repository or security-event metadata
 
-This makes it suitable for ingestion by log collectors and SIEM platforms.
+## Credential Security
 
----
-
-## Why Preserve the Full Payload?
-
-GitHub webhook payload structures vary substantially depending on event type.
-
-The collector therefore provides two layers of information:
-
-### Normalised Metadata
-
-Common fields are extracted for easy searching:
+Never commit the following to Git:
 
 ```text
-github.event
-github.delivery_id
-github.hook_id
-github.repository
-github.organization
-github.sender
-github.action
+GitHub personal access tokens
+GitHub App private keys
+API keys
+Passwords
+Webhook secrets
+Session tokens
+Private certificates or signing keys
 ```
 
-### Original Payload
+If a credential is accidentally committed:
 
-The complete original GitHub JSON object is retained under:
+1. Revoke or rotate it immediately.
+2. Remove it from the repository.
+3. Review repository history and logs for exposure.
+4. Review GitHub audit/security activity.
+5. Replace the credential in the collector deployment.
+
+Deleting a secret from the latest commit alone does not make a previously exposed credential safe.
+
+## Security Feature Availability
+
+Security functionality may vary depending on:
+
+- Repository visibility
+- GitHub plan
+- Repository ownership
+- Organization policy
+- GitHub Advanced Security availability
+- Security feature configuration
+- Token permissions
+- Repository eligibility
+
+The collector should therefore treat unavailable security APIs gracefully.
+
+An unavailable API for one repository should not prevent monitoring of other repositories.
+
+## Code Scanning
+
+Code scanning requires an analysis mechanism before useful alerts will exist.
+
+Common options include:
+
+- CodeQL default setup
+- CodeQL advanced setup
+- Third-party tools that upload SARIF results
+
+Simply granting the collector permission to read code scanning alerts does not configure CodeQL.
+
+## Dependabot
+
+Dependabot alerts should be enabled for repositories where vulnerable dependency monitoring is required.
+
+Additional controls may include:
+
+- Dependabot security updates
+- Dependabot version updates
+
+These are separate features from the collector's ability to retrieve Dependabot alerts.
+
+## Secret Scanning
+
+Secret scanning should be enabled where available.
+
+Push protection should also be enabled where practical to help prevent recognised secrets from being committed in the first place.
+
+Secret scanning and push protection complement each other:
 
 ```text
-payload
+Push protection
+    ↓
+Prevent secret introduction
+
+Secret scanning
+    ↓
+Detect exposed secrets
+
+github-logs-collector
+    ↓
+Centralise alert visibility
 ```
 
-This allows downstream SIEM rules and searches to use event-specific fields without requiring the collector to understand every possible GitHub event type.
+## Existing Repository Requirement
 
----
+Existing repositories must be checked individually.
 
-## Wazuh Integration
+Configuring GitHub to automatically enable security features on new repositories does not guarantee that those same settings have been applied retrospectively to existing repositories.
 
-Example Wazuh configuration is available under:
+For each existing monitored repository, confirm:
 
 ```text
-examples/wazuh/
+Dependabot alerts
+Secret scanning
+Push protection
+Code scanning / CodeQL
+Collector API permissions
 ```
 
-### Log Collection
+See [GITHUB_SECURITY_SETUP.md](GITHUB_SECURITY_SETUP.md) for the full checklist.
 
-Add the supplied `<localfile>` configuration to the Wazuh manager:
+## Documentation
 
-```xml
-<localfile>
-  <log_format>json</log_format>
-  <location>/var/log/github/events.jsonl</location>
-</localfile>
-```
+- [GITHUB_SECURITY_SETUP.md](GITHUB_SECURITY_SETUP.md) — GitHub security configuration required for monitoring
+- [SECURITY.md](SECURITY.md) — vulnerability reporting policy
+- [CHANGELOG.md](CHANGELOG.md) — project and documentation changes
 
-Where possible, provide Wazuh read-only access to the collector log volume.
+## Important
 
-Example:
+Security functionality and availability can vary by repository visibility, GitHub plan, repository configuration, and GitHub feature eligibility.
 
-```yaml
-volumes:
-  - github_logs:/var/log/github:ro
-```
-
-### Example Rules
-
-Example custom Wazuh rules are provided in:
-
-```text
-examples/wazuh/local_rules.xml
-```
-
-These demonstrate detections for events such as:
-
-* Git pushes
-* Repository changes
-* Repository membership events
-* GitHub Actions workflow events
-* Secret scanning alerts
-* Code scanning alerts
-* Dependabot alerts
-
-Review custom rule IDs before deployment to ensure they do not conflict with existing Wazuh custom rules.
-
----
-
-## Health Monitoring
-
-The collector exposes:
-
-```text
-GET /health
-```
-
-Successful response:
-
-```json
-{"status":"healthy"}
-```
-
-The health endpoint intentionally does not disclose:
-
-* Environment variables
-* Webhook secrets
-* Package versions
-* Filesystem paths
-* Internal configuration
-* Stack traces
-
----
-
-## Building Locally
-
-Build the image:
-
-```bash
-docker build \
-  --pull \
-  --no-cache \
-  -t github-logs-collector:0.1.1 \
-  .
-```
-
-Verify the image:
-
-```bash
-docker image ls github-logs-collector
-```
-
-Confirm the runtime user:
-
-```bash
-docker image inspect \
-  github-logs-collector:0.1.1 \
-  --format '{{.Config.User}}'
-```
-
-Expected:
-
-```text
-10001:10001
-```
-
----
-
-## Production Deployment Recommendations
-
-For production use:
-
-1. Terminate HTTPS at a trusted reverse proxy or ingress service.
-2. Do not expose Flask's development server.
-3. Keep `GITHUB_WEBHOOK_SECRET` outside source control.
-4. Use a strong randomly generated webhook secret.
-5. Run the container with `cap_drop: ALL`.
-6. Enable `no-new-privileges`.
-7. Keep the root filesystem read-only.
-8. Limit writable storage to the log volume.
-9. Restrict CPU, memory, and process usage.
-10. Restrict access to collected GitHub event logs.
-11. Keep TLS certificate verification enabled in GitHub.
-12. Pin container versions rather than relying on `latest`.
-
----
-
-## Threat Model
-
-The collector assumes that its HTTP endpoint may receive arbitrary internet traffic.
-
-The design therefore focuses on:
-
-* Authenticating GitHub webhook requests
-* Rejecting malformed input
-* Limiting resource consumption
-* Minimising container privileges
-* Reducing writable filesystem access
-* Protecting webhook secrets
-* Preventing unnecessary information disclosure
-* Preserving sufficient event information for incident investigation
-
-The collector does not consider an event trustworthy solely because it contains GitHub-looking JSON. A valid HMAC signature is required.
-
----
-
-## Current Limitations
-
-The collector currently focuses on **GitHub webhook events**.
-
-It does not currently poll GitHub account security logs or organisation audit APIs.
-
-Personal account security events such as authentication activity, token management, SSH key changes, or other account-level security events may require an additional GitHub API collector in a future release.
-
-Webhook delivery IDs are retained for correlation, but automatic replay suppression is not currently performed because legitimate GitHub redelivery can be useful during troubleshooting and SIEM investigation.
-
----
-
-## Security
-
-See:
-
-```text
-SECURITY.md
-```
-
-Do not report suspected security vulnerabilities through a public GitHub issue.
-
-Where available, use GitHub Private Vulnerability Reporting.
-
----
-
-## Licence
-
-This project is licensed under the MIT License.
-
-See:
-
-```text
-LICENSE
-```
-
----
-
-## Project Goals
-
-GitHub Logs Collector aims to remain:
-
-* Lightweight
-* Secure by default
-* Easy to deploy
-* SIEM-neutral
-* Transparent
-* Easy to audit
-* Suitable for homelab and production use
-* Extensible for future GitHub security telemetry sources
+Always verify the effective settings on each monitored repository.

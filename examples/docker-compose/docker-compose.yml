@@ -1,6 +1,6 @@
 services:
   github-logs-collector:
-    image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.1.1}
+    image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.0}
 
     container_name: github-logs-collector
 
@@ -8,120 +8,120 @@ services:
 
     # Security / reliability:
     # Uses a minimal init process to correctly forward signals
-    # and reap child processes from Gunicorn.
+    # and reap child processes.
     init: true
 
     # Security:
-    # Environment values are kept outside the Compose file.
-    # Never commit the real .env file to source control.
+    # Environment values and credentials are kept outside the Compose file.
     env_file:
       - .env
 
     # Configuration:
-    # Defaults can be overridden by values supplied through .env
-    # or the shell environment.
+    # Defaults can be overridden through .env or shell environment variables.
     environment:
-      MAX_CONTENT_LENGTH: ${MAX_CONTENT_LENGTH:-5242880}
+      POLL_INTERVAL: ${POLL_INTERVAL:-300}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-20}
+      MAX_PAGES: ${MAX_PAGES:-10}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     # Security:
-    # Defaults to localhost so the service is not accidentally
-    # exposed on every host interface.
-    ports:
-      - "${COLLECTOR_BIND_IP:-127.0.0.1}:8080:8080/tcp"
+    # No ports are published, The collector operates outbound-only and
+    # initiates HTTPS connections to the GitHub API. It does not require
+    # inbound Internet connectivity.
+    # ports:
+    #   None required.
 
     # Security:
-    # Only the persistent log directory should be writable.
+    # Persistent log output and collector state are isolated into
+    # dedicated writable volumes.
     volumes:
       - github_logs:/var/log/github
+      - github_state:/var/lib/github-logs-collector
 
     # Configuration:
     # Docker Compose creates a default network automatically.
     #
-    # If the collector must communicate directly with an existing SIEM
-    # container network, uncomment this section and replace <SIEM_NETWORK>
-    # with the appropriate Docker network name.
+    # The collector only requires outbound HTTPS connectivity to
+    # api.github.com and normally does NOT need to join the SIEM network.
+    #
+    # If direct container-to-container communication with an existing
+    # SIEM solution is required for a future integration, uncomment this
+    # section and replace <SIEM_NETWORK> with the existing Docker network.
     #
     # networks:
     #   - <SIEM_NETWORK>
 
     # Security:
-    # Prevent processes inside the container from gaining
-    # additional Linux privileges.
+    # Prevent processes inside the container from gaining additional
+    # Linux privileges.
     security_opt:
       - no-new-privileges:true
 
     # Security:
-    # The application requires no Linux capabilities.
+    # The collector requires no Linux capabilities.
     cap_drop:
       - ALL
 
     # Security:
     # Make the container root filesystem immutable.
+    #
+    # Only the explicitly mounted log/state volumes and /tmp are writable.
     read_only: true
 
     # Security:
-    # Provide only a small in-memory writable /tmp.
+    # Provide a small memory-backed temporary filesystem.
     tmpfs:
       - /tmp:size=16M,mode=1777
 
     # Security:
     # Prevent excessive process creation.
-    pids_limit: 100
+    pids_limit: 50
 
     # Security / availability:
-    # Bound resource usage if the service is abused.
+    # Bound memory and CPU usage if the service is abused or faults.
     mem_limit: 128m
-    cpus: 0.50
+    cpus: 0.25
 
     # Reliability:
-    # Allow Gunicorn workers to exit cleanly.
+    # Allow the Python collector to exit cleanly.
     stop_grace_period: 30s
 
     # Security / operations:
-    # Prevent Docker JSON logs from growing indefinitely.
+    # Prevent Docker stdout/stderr logs from consuming unlimited disk.
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
 
-    # Reliability:
-    # Verify that the application is responding without exposing
-    # sensitive configuration or application details.
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
     # Security:
-    # The collector is a non-interactive service and does not require
-    # stdin or a pseudo-terminal.
+    # The collector is a non-interactive background service.
     stdin_open: false
     tty: false
 
 
 volumes:
+  # Persistent SIEM event log storage.
   github_logs:
+
+  # Persistent SQLite database used for event deduplication
+  # and polling state.
+  github_state:
 
 
 # Configuration:
 # Optional external SIEM network.
 #
-# Uncomment this section only when the collector needs to attach
-# directly to an existing Docker network used by the SIEM solution.
+# Normally this is NOT required because the collector communicates
+# outbound to GitHub and writes events to a shared volume.
 #
-# Replace <SIEM_NETWORK> with the existing Docker network name.
-# The network must already exist because external: true prevents
-# Docker Compose from creating it.
+# Uncomment this section only if the collector must communicate directly
+# with containers on an existing SIEM Docker network.
+#
+# Replace <SIEM_NETWORK> with the exact existing Docker network name.
+#
+# The network must already exist because external: true tells Docker
+# Compose not to create or manage it.
 #
 # networks:
 #   <SIEM_NETWORK>:

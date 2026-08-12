@@ -1,23 +1,30 @@
 # Security:
-# Never commit environment files containing real secrets.
+# Never commit real runtime environment files.
 .env
 .env.*
 
-# Explicitly allow the public example configuration.
+# Keep documented example environment files.
 !.env.example
+
+# Security:
+# Never commit local secrets or credentials.
+secrets/
+*.pem
+*.key
 
 # Python.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Logs.
+# Runtime data.
 *.log
+*.db
+*.sqlite
+*.sqlite3
+*.tmp
 
 # Editors / operating systems.
 .vscode/
 .idea/
 .DS_Store
-
-# Temp files
-*.tmp

@@ -1,28 +1,39 @@
 # Security:
-# Never copy local environment files containing secrets into the image.
+# Never include runtime environment files or credentials
+# in the Docker build context.
 .env
 .env.*
+secrets/
+*.pem
+*.key
 
-# Source-control metadata is unnecessary inside the image.
+# Source control.
 .git
 .gitignore
-.github
+.github/
 
-# Development and test files are not required at runtime.
+# Development / test files.
 tests/
 examples/
 
-# Python temporary/cache files.
+# Python caches.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Documentation and local editor metadata.
+# Documentation is not required in the runtime image.
 README.md
 SECURITY.md
 LICENSE
+
+# Editor / OS files.
 .vscode/
 .idea/
+.DS_Store
 
-# Local logs.
+# Runtime data must never be built into the image.
 *.log
+*.db
+*.sqlite
+*.sqlite3
+*.tmp

@@ -1,182 +1,248 @@
 # Security Policy
 
-Security is a primary design goal of GitHub Logs Collector.
+## Reporting a Vulnerability
 
-The project receives externally supplied webhook traffic and should therefore
-be treated as an internet-facing security-sensitive service.
+Please do not publicly disclose a suspected security vulnerability before it has been reviewed.
+
+If you identify a vulnerability in `github-logs-collector`, report it privately through the repository's GitHub security reporting capability when available.
+
+Include enough information to reproduce and assess the issue, such as:
+
+- Affected component or file
+- Affected version or commit
+- Description of the vulnerability
+- Reproduction steps
+- Expected and actual behaviour
+- Potential security impact
+- Relevant logs or screenshots with secrets removed
+- Suggested remediation, if known
+
+## Sensitive Information
+
+Do not include any of the following in public issues, pull requests, screenshots, or logs:
+
+- GitHub personal access tokens
+- API keys
+- Passwords
+- Private keys
+- Session tokens
+- Webhook secrets
+- Internal credentials
+- Unredacted secrets discovered by the collector
+
+If sensitive credentials are exposed, revoke or rotate them immediately.
 
 ## Supported Versions
 
-Security updates are provided for the latest released version.
+Security fixes are expected to target the current maintained version of the project.
 
-| Version | Supported |
-|---|---|
-| 0.1.x | Yes |
+Older revisions may not receive security updates.
 
-## Reporting a Vulnerability
+## Security Design
 
-Do not disclose suspected security vulnerabilities through a public GitHub
-issue.
+The project should follow least-privilege principles.
 
-Use GitHub Private Vulnerability Reporting where available.
+Recommended deployment controls include:
 
-Reports should include:
+- Dedicated GitHub credentials for the collector
+- Read-only GitHub permissions wherever possible
+- Protected environment variables or secret storage
+- Container privilege reduction
+- `no-new-privileges:true`
+- Resource limits
+- Restricted Docker networking where practical
+- No Docker socket access unless explicitly required
+- Regular dependency and image updates
+- GitHub repository security features enabled where available
 
-- affected version
-- vulnerability description
-- reproduction steps
-- security impact
-- suggested mitigation, if known
+## GitHub Credential Permissions
 
-Please avoid including real webhook secrets, access tokens, credentials, or
-other sensitive production information.
+The GitHub credential used by the collector should be limited to the repositories and APIs that it needs.
 
-## Security Architecture
+Common read-only permissions include:
 
-The collector implements multiple defensive controls.
+```text
+Metadata                  Read
+Contents                  Read
+Dependabot alerts         Read
+Code scanning alerts      Read
+Secret scanning alerts    Read
+```
 
-### Webhook Authentication
+Do not assign write or administrative permissions unless a documented application feature explicitly requires them.
 
-GitHub webhook requests are authenticated using the
-`X-Hub-Signature-256` header.
+## Credential Storage
 
-The collector:
+GitHub credentials must not be embedded directly in:
 
-1. reads the original HTTP request body
-2. calculates an HMAC-SHA256 digest using the configured webhook secret
-3. performs constant-time comparison using `hmac.compare_digest()`
-4. rejects requests whose signatures do not match
+```text
+Python source files
+Dockerfiles
+docker-compose.yml
+README files
+Shell scripts
+Git-tracked environment files
+```
 
-Unsigned or incorrectly signed requests are not processed or written to the
-event log.
+Use an appropriate secret mechanism such as:
 
-### Secret Management
+- Protected environment variables
+- Docker secrets
+- Host-side protected secret files
+- A dedicated secrets-management platform
 
-The GitHub webhook secret must not be:
+Ensure secret files are excluded from Git.
 
-- embedded in source code
-- committed to Git
-- included in container images
-- written to application logs
+For example:
 
-Generate secrets using a cryptographically secure source, for example:
+```gitignore
+.env
+*.key
+*.pem
+secrets/
+```
 
-    openssl rand -hex 32
+Adjust exclusions to the project's actual structure.
 
-Production deployments should preferably use a dedicated secret-management
-solution.
+## Logging
 
-### Request Validation
+Logs should provide enough information for troubleshooting without exposing sensitive credentials.
 
-The collector:
+Safe metadata may include:
 
-- accepts only JSON webhook requests
-- limits maximum request-body size
-- validates GitHub event metadata
-- limits metadata field lengths
-- rejects malformed JSON payloads
+```text
+Repository name
+Security API type
+HTTP response status
+Event identifier
+Collector processing state
+```
 
-### Logging
+Avoid logging:
 
-The collector does not intentionally log:
+```text
+Authorization headers
+Personal access tokens
+Private keys
+Session secrets
+Webhook secrets
+Raw credentials
+```
 
-- GitHub webhook secrets
-- X-Hub-Signature-256 values
-- Authorization headers
-- Cookie headers
-- arbitrary HTTP request headers
+When GitHub API requests fail, log the HTTP status and safe response message where possible.
 
-GitHub event payloads may themselves contain sensitive repository or account
-information.
+## Container Security
 
-Administrators are responsible for securing access to collected event logs.
+The collector container should operate with minimal privileges.
 
-### Container Security
+Recommended controls include:
 
-The recommended Docker deployment uses:
+```yaml
+security_opt:
+  - no-new-privileges:true
+```
 
-- non-root execution
-- dedicated UID/GID
-- `no-new-privileges`
-- all Linux capabilities dropped
-- read-only root filesystem
-- limited writable filesystem locations
-- memory-backed `/tmp`
-- process limits
+Where compatible with the application, also consider:
+
+- Read-only filesystems
+- Dropped Linux capabilities
+- Memory limits
+- PID limits
 - CPU limits
-- memory limits
-- log rotation
-- no interactive stdin
-- no pseudo-terminal
+- Non-root execution
+- Restricted bind mounts
+- Dedicated Docker networks
 
-### Network Security
+Do not apply controls blindly if they prevent required functionality.
 
-The collector defaults to binding Docker's published port to:
+Each hardening control should be validated against the running application.
 
-    127.0.0.1
+## Docker Socket
 
-For internet-facing deployments, TLS should terminate at a trusted reverse
-proxy or ingress service.
+Do not mount:
 
-Recommended architecture:
+```text
+/var/run/docker.sock
+```
 
-    Internet
-        |
-       TLS
-        |
-    Reverse Proxy
-        |
-    Private Network
-        |
-    GitHub Logs Collector
+into the collector unless there is an explicit and unavoidable functional requirement.
 
-Do not expose Flask's development server directly to the Internet.
+Access to the Docker daemon can provide extensive control over containers and potentially the host.
 
-### SIEM Access
+## Dependency Security
 
-Where a SIEM consumes the collector output using a shared Docker volume,
-the SIEM should receive read-only access whenever possible.
+Keep application dependencies current.
 
-Example:
+Repository security controls should include, where available:
 
-    github_logs:/var/log/github:ro
+- Dependency graph
+- Dependabot alerts
+- Dependabot security updates
+- Code scanning
+- Secret scanning
+- Push protection
 
-### Dependency Security
+Security updates should be reviewed before deployment.
 
-Direct Python dependencies are version-pinned for reproducible builds.
+## GitHub Security Features
 
-Container and dependency vulnerability scanning should be performed before
-publishing a release.
+This `SECURITY.md` file defines the project's vulnerability-reporting policy.
 
-Future releases may additionally use dependency hashes and pinned base-image
-digests for stronger supply-chain integrity.
+It does **not** enable GitHub security products such as:
 
-### Health Endpoint
+- Dependabot alerts
+- Secret scanning
+- Push protection
+- Code scanning / CodeQL
 
-The health endpoint intentionally provides only minimal operational state.
+Those features must be configured separately in GitHub repository security settings.
 
-It must not expose:
+Existing repositories may require these controls to be enabled individually.
 
-- secrets
-- environment variables
-- package versions
-- filesystem paths
-- internal configuration
-- stack traces
+See [GITHUB_SECURITY_SETUP.md](GITHUB_SECURITY_SETUP.md) for repository monitoring configuration.
 
-### Known Design Considerations
+## Secret Scanning
 
-The collector preserves the original GitHub webhook JSON payload for SIEM
-analysis.
+Secret scanning should be enabled for the repository where available.
 
-This provides maximum detection and investigation value but means collected
-events may contain sensitive repository metadata.
+Push protection should also be enabled where available to reduce the likelihood of credentials being introduced into repository history.
 
-Log storage and SIEM access controls should therefore be treated as
-security-sensitive.
+If a secret is discovered:
 
-Webhook delivery IDs are retained for correlation.
+1. Revoke or rotate the credential immediately.
+2. Determine when it was exposed.
+3. Determine where it was used.
+4. Review relevant audit and access logs.
+5. Remove the secret from active source/configuration.
+6. Consider repository history cleanup where appropriate.
+7. Do not assume history rewriting makes the credential safe.
 
-The initial collector does not perform automatic replay suppression because
-legitimate GitHub webhook redelivery may be operationally useful to SIEM
-platforms.
+Credential rotation is the primary containment action.
+
+## Security Updates
+
+Security-related changes should be documented in `CHANGELOG.md` where appropriate.
+
+Do not place exploit details in the changelog before users have had reasonable opportunity to apply a security fix.
+
+## Vulnerability Disclosure
+
+Where a vulnerability affects users of the project, coordinated disclosure is preferred.
+
+A security report should include:
+
+```text
+Affected versions
+Fixed versions
+Impact
+Mitigation
+Upgrade guidance
+```
+
+Sensitive exploit details may be withheld until remediation is available.
+
+## Scope
+
+This policy covers security issues in the `github-logs-collector` project itself.
+
+Alerts retrieved by the collector from monitored repositories are findings relating to those repositories and should be handled according to the applicable repository or organization's incident-response process.
