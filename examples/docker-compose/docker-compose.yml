@@ -23,6 +23,7 @@ services:
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-20}
       MAX_PAGES: ${MAX_PAGES:-10}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HEALTH_MAX_AGE: ${HEALTH_MAX_AGE:-900}
 
     # Security:
     # No ports are published, The collector operates outbound-only and
@@ -81,6 +82,25 @@ services:
     # Bound memory and CPU usage if the service is abused or faults.
     mem_limit: 128m
     cpus: 0.25
+
+    # Reliability:
+    # Health is based on successful GitHub polling rather than merely
+    # checking whether the Python process is still running.
+    #
+    # With the default 300-second polling interval, the collector is
+    # considered unhealthy if no successful poll has completed within
+    # 900 seconds.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "/app/healthcheck.py"
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 5m
 
     # Reliability:
     # Allow the Python collector to exit cleanly.

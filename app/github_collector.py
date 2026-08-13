@@ -276,7 +276,7 @@ session.headers.update(
             "2022-11-28",
 
         "User-Agent":
-            "github-logs-collector/0.2.0",
+            "github-logs-collector/0.2.1",
     }
 )
 

@@ -1,37 +1,35 @@
-# Security:
-# Never include runtime environment files or credentials
-# in the Docker build context.
+# Secrets / deployment configuration
 .env
 .env.*
 secrets/
 *.pem
 *.key
 
-# Source control.
+# Source control
 .git
 .gitignore
 .github/
 
-# Development / test files.
+# Development/test artifacts
 tests/
-examples/
-
-# Python caches.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Documentation is not required in the runtime image.
+# Documentation and deployment examples are not required at runtime.
+examples/
+docs/
 README.md
 SECURITY.md
+CHANGELOG.md
 LICENSE
 
-# Editor / OS files.
+# Editor / OS metadata
 .vscode/
 .idea/
 .DS_Store
 
-# Runtime data must never be built into the image.
+# Runtime-generated data
 *.log
 *.db
 *.sqlite

@@ -1,163 +1,201 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Supported Versions
 
-Please do not publicly disclose a suspected security vulnerability before it has been reviewed.
+Security updates are targeted at the currently maintained release.
 
-If you identify a vulnerability in `github-logs-collector`, report it privately through the repository's GitHub security reporting capability when available.
+| Version | Supported |
+|---|---|
+| 0.2.1 | Yes |
+| 0.2.0 | Upgrade recommended |
+| < 0.2.0 | No |
 
-Include enough information to reproduce and assess the issue, such as:
+Users should run the latest maintained container image whenever practical.
 
-- Affected component or file
-- Affected version or commit
-- Description of the vulnerability
-- Reproduction steps
-- Expected and actual behaviour
-- Potential security impact
-- Relevant logs or screenshots with secrets removed
-- Suggested remediation, if known
+---
 
-## Sensitive Information
+# Reporting a Vulnerability
 
-Do not include any of the following in public issues, pull requests, screenshots, or logs:
+Do not publicly disclose a suspected vulnerability before it has been reviewed.
+
+If you identify a vulnerability in `github-logs-collector`, report it privately through the repository's GitHub security reporting capability where available.
+
+Include sufficient information to reproduce and assess the issue:
+
+- affected component or file
+- affected version or commit
+- description of the vulnerability
+- reproduction steps
+- expected and actual behaviour
+- potential security impact
+- relevant logs or screenshots with secrets removed
+- suggested remediation, if known
+
+Do not include authentication credentials or discovered secrets.
+
+---
+
+# Sensitive Information
+
+Never include the following in public issues, pull requests, screenshots, diagnostic output, or commits:
 
 - GitHub personal access tokens
 - API keys
-- Passwords
-- Private keys
-- Session tokens
-- Webhook secrets
-- Internal credentials
-- Unredacted secrets discovered by the collector
+- passwords
+- private keys
+- session tokens
+- authentication headers
+- internal credentials
+- secrets discovered through secret scanning
+- unredacted sensitive repository information
 
-If sensitive credentials are exposed, revoke or rotate them immediately.
+If a credential is exposed, revoke or rotate it immediately.
 
-## Supported Versions
+---
 
-Security fixes are expected to target the current maintained version of the project.
+# Security Design
 
-Older revisions may not receive security updates.
-
-## Security Design
-
-The project should follow least-privilege principles.
-
-Recommended deployment controls include:
-
-- Dedicated GitHub credentials for the collector
-- Read-only GitHub permissions wherever possible
-- Protected environment variables or secret storage
-- Container privilege reduction
-- `no-new-privileges:true`
-- Resource limits
-- Restricted Docker networking where practical
-- No Docker socket access unless explicitly required
-- Regular dependency and image updates
-- GitHub repository security features enabled where available
-
-## GitHub Credential Permissions
-
-The GitHub credential used by the collector should be limited to the repositories and APIs that it needs.
-
-Common read-only permissions include:
-
-```text
-Metadata                  Read
-Contents                  Read
-Dependabot alerts         Read
-Code scanning alerts      Read
-Secret scanning alerts    Read
-```
-
-Do not assign write or administrative permissions unless a documented application feature explicitly requires them.
-
-## Credential Storage
-
-GitHub credentials must not be embedded directly in:
-
-```text
-Python source files
-Dockerfiles
-docker-compose.yml
-README files
-Shell scripts
-Git-tracked environment files
-```
-
-Use an appropriate secret mechanism such as:
-
-- Protected environment variables
-- Docker secrets
-- Host-side protected secret files
-- A dedicated secrets-management platform
-
-Ensure secret files are excluded from Git.
-
-For example:
-
-```gitignore
-.env
-*.key
-*.pem
-secrets/
-```
-
-Adjust exclusions to the project's actual structure.
-
-## Logging
-
-Logs should provide enough information for troubleshooting without exposing sensitive credentials.
-
-Safe metadata may include:
-
-```text
-Repository name
-Security API type
-HTTP response status
-Event identifier
-Collector processing state
-```
-
-Avoid logging:
-
-```text
-Authorization headers
-Personal access tokens
-Private keys
-Session secrets
-Webhook secrets
-Raw credentials
-```
-
-When GitHub API requests fail, log the HTTP status and safe response message where possible.
-
-## Container Security
-
-The collector container should operate with minimal privileges.
+GitHub Logs Collector follows a least-privilege and reduced-attack-surface design.
 
 Recommended controls include:
+
+- dedicated GitHub credentials
+- read-only GitHub permissions
+- no inbound collector listener
+- no published Docker ports
+- non-root execution
+- read-only root filesystem
+- `no-new-privileges`
+- all Linux capabilities dropped
+- no Docker socket access
+- persistent writes limited to log and state volumes
+- memory-backed `/tmp`
+- resource limits
+- protected runtime secrets
+- regular image rebuilds
+- vulnerability scanning
+- explicit container version pinning
+
+---
+
+# Alpine Runtime
+
+Version `0.2.1` uses:
+
+```text
+python:3.13.15-alpine3.24
+```
+
+as the runtime base image.
+
+The change reduces the operating-system package footprint compared with the previous Debian slim runtime.
+
+A smaller runtime image reduces the number of packages that require patching and the amount of unnecessary executable functionality present inside the production container.
+
+The base image should still be rebuilt regularly using:
+
+```bash
+docker build --pull --no-cache ...
+```
+
+to obtain current upstream security fixes.
+
+---
+
+# Runtime Packaging Tools
+
+Python `pip` is required during image construction to install application dependencies.
+
+It is **not required by the running collector**.
+
+The Docker build therefore removes pip after dependency installation.
+
+This means the final runtime image intentionally does not support:
+
+```bash
+python -m pip
+```
+
+Runtime package installation should not be performed inside a running collector container.
+
+Dependency changes should instead be made through:
+
+```text
+requirements.txt
+```
+
+followed by a clean image rebuild.
+
+This approach:
+
+- reduces runtime attack surface
+- prevents unnecessary package-management operations
+- removes pip's unused vendored libraries
+- makes dependency changes reproducible through the Docker build process
+
+---
+
+# Container Identity
+
+The collector runs as:
+
+```text
+UID 10001
+GID 10001
+```
+
+The runtime user does not require root privileges.
+
+Persistent writable paths are limited to:
+
+```text
+/var/log/github
+/var/lib/github-logs-collector
+```
+
+and `/tmp` should be provided using a Docker `tmpfs`.
+
+---
+
+# Read-Only Root Filesystem
+
+The recommended Compose configuration uses:
+
+```yaml
+read_only: true
+```
+
+Only explicitly mounted log/state volumes and the memory-backed temporary directory should remain writable.
+
+---
+
+# Linux Capabilities
+
+The collector requires no additional Linux capabilities.
+
+Recommended:
+
+```yaml
+cap_drop:
+  - ALL
+```
+
+---
+
+# No New Privileges
+
+Enable:
 
 ```yaml
 security_opt:
   - no-new-privileges:true
 ```
 
-Where compatible with the application, also consider:
+to prevent processes from acquiring additional privileges through executable permission mechanisms.
 
-- Read-only filesystems
-- Dropped Linux capabilities
-- Memory limits
-- PID limits
-- CPU limits
-- Non-root execution
-- Restricted bind mounts
-- Dedicated Docker networks
+---
 
-Do not apply controls blindly if they prevent required functionality.
-
-Each hardening control should be validated against the running application.
-
-## Docker Socket
+# Docker Socket
 
 Do not mount:
 
@@ -165,84 +203,275 @@ Do not mount:
 /var/run/docker.sock
 ```
 
-into the collector unless there is an explicit and unavoidable functional requirement.
+into the collector.
 
-Access to the Docker daemon can provide extensive control over containers and potentially the host.
+The application does not require Docker daemon access.
 
-## Dependency Security
+Providing Docker socket access would significantly increase the impact of a container compromise.
 
-Keep application dependencies current.
+---
 
-Repository security controls should include, where available:
+# Network Exposure
 
-- Dependency graph
-- Dependabot alerts
-- Dependabot security updates
-- Code scanning
-- Secret scanning
-- Push protection
+The collector performs outbound HTTPS requests to GitHub.
 
-Security updates should be reviewed before deployment.
+It does not require:
 
-## GitHub Security Features
+- inbound Internet access
+- published Docker ports
+- reverse proxy access
+- host networking
+
+No Docker `ports:` configuration should normally be present.
+
+---
+
+# GitHub Credentials
+
+Use a fine-grained personal access token where possible.
+
+Grant only the read permissions required for the features being collected.
+
+Typical permissions include:
+
+```text
+Account:
+  Events: Read
+
+Repository:
+  Metadata: Read
+  Dependabot alerts: Read
+  Code scanning alerts: Read
+  Secret scanning alerts: Read
+```
+
+Restrict repository access to the intended monitoring scope.
+
+Do not grant write or administration permissions unless explicitly required by a future feature.
+
+---
+
+# GitHub Security Features
 
 This `SECURITY.md` file defines the project's vulnerability-reporting policy.
 
-It does **not** enable GitHub security products such as:
+It does **not** enable GitHub repository security products.
 
+Features such as:
+
+- dependency graph
 - Dependabot alerts
-- Secret scanning
-- Push protection
-- Code scanning / CodeQL
+- secret scanning
+- push protection
+- code scanning / CodeQL
 
-Those features must be configured separately in GitHub repository security settings.
+must be configured independently.
 
-Existing repositories may require these controls to be enabled individually.
-
-See [GITHUB_SECURITY_SETUP.md](GITHUB_SECURITY_SETUP.md) for repository monitoring configuration.
-
-## Secret Scanning
-
-Secret scanning should be enabled for the repository where available.
-
-Push protection should also be enabled where available to reduce the likelihood of credentials being introduced into repository history.
-
-If a secret is discovered:
-
-1. Revoke or rotate the credential immediately.
-2. Determine when it was exposed.
-3. Determine where it was used.
-4. Review relevant audit and access logs.
-5. Remove the secret from active source/configuration.
-6. Consider repository history cleanup where appropriate.
-7. Do not assume history rewriting makes the credential safe.
-
-Credential rotation is the primary containment action.
-
-## Security Updates
-
-Security-related changes should be documented in `CHANGELOG.md` where appropriate.
-
-Do not place exploit details in the changelog before users have had reasonable opportunity to apply a security fix.
-
-## Vulnerability Disclosure
-
-Where a vulnerability affects users of the project, coordinated disclosure is preferred.
-
-A security report should include:
+See:
 
 ```text
-Affected versions
-Fixed versions
-Impact
-Mitigation
-Upgrade guidance
+docs/GITHUB_SECURITY_SETUP.md
 ```
 
-Sensitive exploit details may be withheld until remediation is available.
+for setup guidance.
 
-## Scope
+---
 
-This policy covers security issues in the `github-logs-collector` project itself.
+# Event Data
 
-Alerts retrieved by the collector from monitored repositories are findings relating to those repositories and should be handled according to the applicable repository or organization's incident-response process.
+Collector JSONL output may contain security-sensitive information including:
+
+- private repository names
+- branch names
+- commit metadata
+- internal project identifiers
+- vulnerability information
+- code scanning findings
+- secret-scanning metadata
+
+Restrict access to:
+
+```text
+/var/log/github/events.jsonl
+```
+
+and downstream SIEM storage.
+
+---
+
+# Persistent State
+
+The collector stores deduplication state in:
+
+```text
+/var/lib/github-logs-collector/state.db
+```
+
+This volume does not normally contain the GitHub authentication token but should still be protected against unnecessary modification.
+
+---
+
+# Health Monitoring
+
+Version `0.2.1` includes a health probe that validates successful collector progress.
+
+After every successful polling cycle the application updates:
+
+```text
+/var/lib/github-logs-collector/last_successful_poll
+```
+
+The health check verifies that this timestamp remains sufficiently recent.
+
+Default:
+
+```env
+POLL_INTERVAL=300
+HEALTH_MAX_AGE=900
+```
+
+This allows approximately three normal polling intervals before the container is marked unhealthy.
+
+This detects failures where:
+
+- the process remains running but polling stalls
+- GitHub API failures repeatedly prevent successful cycles
+- collector state operations repeatedly fail
+- the application is alive but no longer making progress
+
+The health probe operates locally and does not require the GitHub token.
+
+---
+
+# TLS
+
+TLS certificate verification must remain enabled for GitHub API requests.
+
+Do not disable HTTPS certificate verification to work around certificate or proxy failures.
+
+---
+
+# Dependency Management
+
+Application dependencies are defined in:
+
+```text
+requirements.txt
+```
+
+Dependency upgrades should be performed through source control followed by a clean Docker rebuild.
+
+Do not install additional Python packages interactively into production containers.
+
+---
+
+# Vulnerability Scanning
+
+Container images should be scanned before release.
+
+Example:
+
+```bash
+trivy image \
+  --severity CRITICAL,HIGH \
+  github-logs-collector:0.2.1
+```
+
+The `0.2.1` release candidate was tested after migration to Alpine and removal of runtime Python packaging tooling.
+
+At the time of release testing, Trivy reported:
+
+```text
+CRITICAL: 0
+HIGH:     0
+```
+
+Scanner databases change continuously.
+
+A previously clean image may receive findings later as new vulnerabilities are disclosed.
+
+A zero-finding result must therefore not be interpreted as proof that an image is permanently vulnerability-free.
+
+---
+
+# Image Updates
+
+Use:
+
+```bash
+docker build \
+  --pull \
+  --no-cache \
+  ...
+```
+
+when preparing a release.
+
+This ensures the current upstream base image is retrieved instead of silently reusing an older local layer.
+
+---
+
+# Secrets in Docker
+
+The GitHub token must be supplied at runtime.
+
+Do not:
+
+- add the token to the Dockerfile
+- use the token as an image build argument
+- commit a populated `.env`
+- embed the token in application source
+- log the Authorization header
+
+For local/homelab deployments, protect `.env`:
+
+```bash
+chmod 600 .env
+```
+
+For higher-security environments, use an appropriate external secret-management mechanism.
+
+---
+
+# Release Security Checklist
+
+Before publishing a release:
+
+- [ ] Build using `--pull --no-cache`
+- [ ] Confirm the image runs as UID/GID `10001:10001`
+- [ ] Confirm the root filesystem can remain read-only
+- [ ] Confirm all Linux capabilities are dropped
+- [ ] Confirm `no-new-privileges` is enabled
+- [ ] Confirm no Docker ports are published
+- [ ] Confirm Docker socket access is absent
+- [ ] Confirm pip is absent from the runtime image
+- [ ] Confirm application imports succeed
+- [ ] Confirm SQLite state persists
+- [ ] Confirm JSONL output works
+- [ ] Confirm successful-poll timestamp updates
+- [ ] Confirm Docker health status becomes healthy
+- [ ] Run Trivy vulnerability scanning
+- [ ] Run Trivy secret scanning
+- [ ] Check source control for accidentally committed tokens
+- [ ] Review `.env` exclusion
+- [ ] Review staged Git changes before release
+
+---
+
+# Security Is Layered
+
+A clean vulnerability scan is only one control.
+
+Security also depends on:
+
+- least privilege
+- secure credential management
+- GitHub configuration
+- container hardening
+- restricted file access
+- prompt patching
+- monitoring
+- vulnerability management
+- secure operational practices
+
+The project should not weaken one security control merely to obtain a cleaner scanner report.
