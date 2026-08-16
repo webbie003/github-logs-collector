@@ -303,41 +303,39 @@ Images should be rebuilt and rescanned regularly.
 
 ## Repository Structure
 
-```text
-github-logs-collector/
+'github-logs-collector/'
 │
-├── .github/
-│   └── workflows/
-│       └── docker-publish.yml](.github/workflows/docker-publish.yml)
+├── '.github/'
+│   └── 'workflows/'
+│       └── ['docker-publish.yml'](.github/workflows/docker-publish.yml)
 │
-├── app/
-│   ├── [github_collector.py](app/github_collector.py)
-│   └── [healthcheck.py](app/healthcheck.py)
+├── 'app/'
+│   ├── ['github_collector.py](app/github_collector.py)
+│   └── ['healthcheck.py](app/healthcheck.py)
 │
-├── docs/
-│   ├── images/
-│   │   └── [ghlc_logo.png]](docs/images/ghlc_logo.png)
-│   └── [GITHUB_SECURITY_SETUP.md](docs/GITHUB_SECURITY_SETUP.md)
+├── 'docs/'
+│   ├── 'images/'
+│   │   └── ['ghlc_logo.png']](docs/images/ghlc_logo.png)
+│   └── ['GITHUB_SECURITY_SETUP.md'](docs/GITHUB_SECURITY_SETUP.md)
 │
-├── examples/
-│   ├── docker-compose/
-│   │   ├── [.env.example](examples/docker-compose/.env.example)
-│   │   └── docker-compose.yml](examples/docker-compose/docker-compose.yml)
+├── 'examples/'
+│   ├── 'docker-compose/'
+│   │   ├── ['.env.example'](examples/docker-compose/.env.example)
+│   │   └── ['docker-compose.yml'](examples/docker-compose/docker-compose.yml)
 │   │
-│   └── wazuh/
-│       ├── [README.md](examples/wazuh/README.md)
-│       ├── [local_rules.xml](examples/wazuh/local_rules.xml)
-│       └── [ossec-localfile.xml](examples/wazuh/ossec-localfile.xml)
+│   └── 'wazuh/'
+│       ├── ['README.md'](examples/wazuh/README.md)
+│       ├── ['local_rules.xml'](examples/wazuh/local_rules.xml)
+│       └── ['ossec-localfile.xml'](examples/wazuh/ossec-localfile.xml)
 │
-├── [Dockerfile](Dockerfile)
-├── [requirements.txt](requirements.txt)
-├── [.dockerignore](.dockerignore)
-├── [.gitignore](.gitignore)
-├── [README.md](README.md)
-├── [SECURITY.md](SECURITY.md) <-- You are here.
-├── [CHANGELOG.md](CHANGELOG.md)
-└── [LICENSE]()
-```
+├── ['Dockerfile'](Dockerfile)
+├── ['requirements.txt'](requirements.txt)
+├── ['.dockerignore'](.dockerignore)
+├── ['.gitignore'](.gitignore)
+├── ['README.md'](README.md)
+├── ['SECURITY.md'](SECURITY.md)' <-- You are here.'
+├── ['CHANGELOG.md'](CHANGELOG.md)
+└── ['LICENSE'](LICENSE)
 
 ---
 
