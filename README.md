@@ -22,8 +22,8 @@ The project is intentionally **SIEM-Agnostic**.
 
 Pull the latest image from either supported registry.
 
-|---|---|
 | GitHub Container Registry [![GHCR Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fwebbie003%2Fgithub-logs-collector&query=downloadCount&label=GHCR%20Pulls&logo=github&color=green)](https://github.com/users/webbie003/packages/container/package/github-logs-collector) | Docker Hub [![Docker Pulls](https://img.shields.io/docker/pulls/techie003/github-logs-collector?logo=docker)](https://hub.docker.com/r/techie003/github-logs-collector) |
+|:---|:---|
 | **Latest image:** `docker pull ghcr.io/webbie003/github-logs-collector:latest` | **Latest image:** `docker pull techie003/github-logs-collector:latest` |
 | **Specific image:** `docker pull ghcr.io/webbie003/github-logs-collector:0.2.1` | **Specific image:** `docker pull techie003/github-logs-collector:0.2.1` |
 
