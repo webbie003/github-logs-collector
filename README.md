@@ -303,39 +303,41 @@ Images should be rebuilt and rescanned regularly.
 
 ## Repository Structure
 
-'github-logs-collector/'
+<pre>
+github-logs-collector/
 │
-├── '.github/'
-│   └── 'workflows/'
-│       └── ['docker-publish.yml'](.github/workflows/docker-publish.yml)
+├── .github/
+│   └── workflows/
+│       └── <a href=".github/workflows/docker-publish.yml">docker-publish.yml</a>
 │
-├── 'app/'
-│   ├── ['github_collector.py](app/github_collector.py)
-│   └── ['healthcheck.py](app/healthcheck.py)
+├── app/
+│   ├── <a href="app/github_collector.py">github_collector.py</a>
+│   └── <a href="app/healthcheck.py">healthcheck.py</a>
 │
-├── 'docs/'
-│   ├── 'images/'
-│   │   └── ['ghlc_logo.png']](docs/images/ghlc_logo.png)
-│   └── ['GITHUB_SECURITY_SETUP.md'](docs/GITHUB_SECURITY_SETUP.md)
+├── docs/
+│   ├── images/
+│   │   └── <a href="docs/images/ghlc_logo.png">ghlc_logo.png</a>
+│   └── <a href="docs/GITHUB_SECURITY_SETUP.md">GITHUB_SECURITY_SETUP.md</a>
 │
-├── 'examples/'
-│   ├── 'docker-compose/'
-│   │   ├── ['.env.example'](examples/docker-compose/.env.example)
-│   │   └── ['docker-compose.yml'](examples/docker-compose/docker-compose.yml)
+├── examples/
+│   ├── docker-compose/
+│   │   ├── <a href="examples/docker-compose/.env.example">.env.example</a>
+│   │   └── <a href="examples/docker-compose/docker-compose.yml">docker-compose.yml</a>
 │   │
-│   └── 'wazuh/'
-│       ├── ['README.md'](examples/wazuh/README.md)
-│       ├── ['local_rules.xml'](examples/wazuh/local_rules.xml)
-│       └── ['ossec-localfile.xml'](examples/wazuh/ossec-localfile.xml)
+│   └── wazuh/
+│       ├── <a href="examples/wazuh/README.md">README.md</a>
+│       ├── <a href="examples/wazuh/local_rules.xml">local_rules.xml</a>
+│       └── <a href="examples/wazuh/ossec-localfile.xml">ossec-localfile.xml</a>
 │
-├── ['Dockerfile'](Dockerfile)
-├── ['requirements.txt'](requirements.txt)
-├── ['.dockerignore'](.dockerignore)
-├── ['.gitignore'](.gitignore)
-├── ['README.md'](README.md)
-├── ['SECURITY.md'](SECURITY.md)' <-- You are here.'
-├── ['CHANGELOG.md'](CHANGELOG.md)
-└── ['LICENSE'](LICENSE)
+├── <a href="Dockerfile">Dockerfile</a>
+├── <a href="requirements.txt">requirements.txt</a>
+├── <a href=".dockerignore">.dockerignore</a>
+├── <a href=".gitignore">.gitignore</a>
+├── <a href="README.md">README.md</a>
+├── <a href="SECURITY.md">SECURITY.md</a>  &lt;-- You are here.
+├── <a href="CHANGELOG.md">CHANGELOG.md</a>
+└── <a href="LICENSE">LICENSE</a>
+</pre>
 
 ---
 
