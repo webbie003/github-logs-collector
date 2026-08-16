@@ -1,4 +1,4 @@
-name: Build and Publish Container
+name: Build and Publish Image
 
 on:
   push:
@@ -22,7 +22,7 @@ env:
   DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/github-logs-collector
 
 jobs:
-  build-and-push:
+  build-and-push-image:
     runs-on: ubuntu-latest
 
     steps:

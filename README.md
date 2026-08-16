@@ -1,19 +1,43 @@
-# GitHub Logs Collector
+<p align="center">
+  <img src="docs/images/ghlc_logo.png" alt="GitHub Logs Collector" width="900">
+</p>
 
-[![Release](https://img.shields.io/github/v/release/webbie003/github-logs-collector?label=version)](https://github.com/webbie003/github-logs-collector/releases/latest)
-[![Container](https://img.shields.io/badge/GHCR-ghcr.io%2Fwebbie003%2Fgithub--logs--collector-blue?logo=github)](https://github.com/users/webbie003/packages/container/package/github-logs-collector)
-[![GHCR Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fwebbie003%2Fgithub-logs-collector&query=downloadCount&label=GHCR%20Pulls&logo=github&color=green)](https://github.com/users/webbie003/packages/container/package/github-logs-collector)
-[![License](https://img.shields.io/github/license/webbie003/github-logs-collector)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
-[![Alpine](https://img.shields.io/badge/alpine-3.24-blue)](https://alpinelinux.org/)
+<p align="center">
+  <a href="https://github.com/webbie003/github-logs-collector/releases/latest">
+    <img src="https://img.shields.io/github/v/release/webbie003/github-logs-collector?label=version" alt="Release">
+  </a>
+  <a href="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml">
+    <img src="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml/badge.svg" alt="Build and Publish Image">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/webbie003/github-logs-collector" alt="License">
+  </a>
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/python-3.13-blue?logo=python" alt="Python">
+  </a>
+  <a href="https://alpinelinux.org/">
+    <img src="https://img.shields.io/badge/alpine-3.24-blue?logo=alpinelinux" alt="Alpine">
+  </a>
+</p>
 
 A lightweight, security-focused GitHub REST API polling collector for SIEM and log-management platforms.
 
-GitHub Logs Collector authenticates to GitHub, retrieves account activity, discovers accessible repositories, collects supported repository security alerts, deduplicates events, and writes structured newline-delimited JSON (`JSONL`) for ingestion by downstream security platforms.
+GitHub Logs Collector securely authenticates to GitHub, retrieves account activity, discovers accessible repositories, collects supported repository security alerts, deduplicates events, and writes structured newline-delimited JSON (`JSONL`) for ingestion by downstream security platforms.
 
 The project is intentionally **SIEM-neutral**.
 
-The collector operates using **outbound HTTPS only** and requires no inbound network listener or published Docker ports.
+---
+
+## Quick Start
+
+Pull the latest image from either supported registry.
+
+| GitHub Container Registry [![GHCR Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fwebbie003%2Fgithub-logs-collector&query=downloadCount&label=GHCR%20Pulls&logo=github&color=green)](https://github.com/users/webbie003/packages/container/package/github-logs-collector) | Docker Hub [![Docker Pulls](https://img.shields.io/docker/pulls/techie003/github-logs-collector?logo=docker)](https://hub.docker.com/r/techie003/github-logs-collector) |
+|---|---|
+| **Latest image:** `docker pull ghcr.io/webbie003/github-logs-collector:latest` | **Latest image:** `docker pull techie003/github-logs-collector:latest` |
+| **Specific image:** `docker pull ghcr.io/webbie003/github-logs-collector:0.2.1` | **Specific image:** `docker pull techie003/github-logs-collector:0.2.1` |
+
+Both registries publish the same release image.
 
 ---
 
@@ -52,48 +76,152 @@ The collector operates using **outbound HTTPS only** and requires no inbound net
 
 ---
 
-# Architecture
+## Architecture
 
-```text
-                    Internet
-                       │
-                       │ HTTPS / TCP 443
-                       ▼
-                ┌──────────────┐
-                │ GitHub REST  │
-                │     API      │
-                └──────┬───────┘
-                       │
-                       │ outbound only
-                       ▼
-        ┌─────────────────────────────┐
-        │ GitHub Logs Collector       │
-        │                             │
-        │ - account events            │
-        │ - repository discovery      │
-        │ - Dependabot alerts         │
-        │ - code scanning alerts      │
-        │ - secret scanning alerts    │
-        │ - deduplication             │
-        └──────────┬─────────┬────────┘
-                   │         │
-                   │         │
-                   ▼         ▼
-          ┌─────────────┐  ┌─────────────────┐
-          │ events.jsonl│  │ SQLite state.db │
-          └──────┬──────┘  └─────────────────┘
-                 │
-                 │ shared volume / file ingestion
-                 ▼
-          ┌──────────────┐
-          │ SIEM / Log   │
-          │ Management   │
-          └──────────────┘
+```mermaid
+flowchart TD
+    internet["Internet"]
+    github["GitHub REST API<br/>HTTPS / TCP 443"]
+
+    subgraph collector["GitHub Logs Collector"]
+        direction TB
+
+        account["Account Events"]
+        repos["Repository Discovery"]
+
+        subgraph security["Repository Security APIs"]
+            direction LR
+            dependabot["Dependabot Alerts"]
+            code["Code Scanning Alerts"]
+            secrets["Secret Scanning Alerts"]
+        end
+
+        normalize["Normalise Events"]
+        dedupe["Deduplicate Events"]
+    end
+
+    events["events.jsonl"]
+    state["SQLite<br/>state.db"]
+    health["Successful Poll State"]
+    siem["SIEM / Log Management"]
+
+    internet --> github
+
+    collector -->|"Outbound HTTPS / TCP 443"| github
+
+    github --> account
+    github --> repos
+
+    repos --> dependabot
+    repos --> code
+    repos --> secrets
+
+    account --> normalize
+    dependabot --> normalize
+    code --> normalize
+    secrets --> normalize
+
+    normalize --> dedupe
+
+    dedupe --> events
+    dedupe --> state
+    dedupe --> health
+
+    events -->|"Shared volume / file ingestion"| siem
+
+    classDef external fill:#eaf3ff,stroke:#3b82f6,stroke-width:1.5px,color:#111827;
+    classDef collectorNode fill:#ecfdf5,stroke:#10b981,stroke-width:1.5px,color:#111827;
+    classDef storage fill:#fffbeb,stroke:#f59e0b,stroke-width:1.5px,color:#111827;
+    classDef destination fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,color:#111827;
+
+    class internet,github external;
+    class account,repos,dependabot,code,secrets,normalize,dedupe collectorNode;
+    class events,state,health storage;
+    class siem destination;
 ```
 
-The collector initiates all network connections.
+The collector is **outbound-only**.
 
-GitHub does not connect directly to the collector.
+It initiates all network connections to the GitHub REST API over HTTPS. GitHub does not establish inbound connections to the collector, and the collector does not require a publicly exposed listener or webhook endpoint.
+
+---
+
+## Polling Flow
+
+```mermaid
+flowchart TD
+    start(["Start Poll Cycle"])
+    config["Load Configuration"]
+    auth["Authenticate to GitHub REST API"]
+    authok{"Authentication successful?"}
+
+    repos["Discover Accessible Repositories"]
+    account["Collect Account Events"]
+
+    security["Poll Repository Security APIs"]
+    dependabot["Dependabot Alerts"]
+    code["Code Scanning Alerts"]
+    secrets["Secret Scanning Alerts"]
+
+    normalize["Normalise Results"]
+    dedupe["Check Deduplication State"]
+    newevents{"New Events?"}
+
+    write["Write events.jsonl"]
+    state["Update SQLite state.db"]
+    success["Update Successful Poll State"]
+
+    warning["Log Warning / Error"]
+    wait["Wait for Next Poll Interval"]
+
+    start --> config
+    config --> auth
+    auth --> authok
+
+    authok -- Yes --> repos
+    authok -- No --> warning
+
+    repos --> account
+    account --> security
+
+    security --> dependabot
+    security --> code
+    security --> secrets
+
+    dependabot --> normalize
+    code --> normalize
+    secrets --> normalize
+    account --> normalize
+
+    normalize --> dedupe
+    dedupe --> newevents
+
+    newevents -- Yes --> write
+    write --> state
+    state --> success
+
+    newevents -- No --> success
+
+    success --> wait
+    warning --> wait
+    wait --> start
+
+    classDef startEnd fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#111827;
+    classDef process fill:#eef2ff,stroke:#6366f1,stroke-width:1.5px,color:#111827;
+    classDef decision fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,color:#111827;
+    classDef warning fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#111827;
+    classDef storage fill:#fffbeb,stroke:#f59e0b,stroke-width:1.5px,color:#111827;
+
+    class start startEnd;
+    class config,auth,repos,account,security,dependabot,code,secrets,normalize,dedupe,success,wait process;
+    class authok,newevents decision;
+    class warning warning;
+    class write,state storage;
+```
+
+Each polling cycle independently collects available GitHub activity and repository security telemetry, normalises the results, removes previously processed events, and writes new events as structured JSONL.
+
+Repository security APIs are handled independently, allowing unavailable or unsupported security features to be skipped without terminating the entire polling cycle.
 
 ---
 
@@ -169,6 +297,9 @@ Images should be rebuilt and rescanned regularly.
 
 ```text
 github-logs-collector/
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml
 ├── app/
 │   ├── github_collector.py
 │   └── healthcheck.py
@@ -178,8 +309,8 @@ github-logs-collector/
 │
 ├── examples/
 │   ├── docker-compose/
-│   │   ├── docker-compose.yml
-│   │   └── .env.example
+│   │   ├── .env.example
+│   │   └── docker-compose.yml
 │   │
 │   └── wazuh/
 │       ├── README.md
