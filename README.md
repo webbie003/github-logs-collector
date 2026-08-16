@@ -3,28 +3,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/webbie003/github-logs-collector/releases/latest">
-    <img src="https://img.shields.io/github/v/release/webbie003/github-logs-collector?label=version" alt="Release">
-  </a>
-  <a href="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml">
-    <img src="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml/badge.svg" alt="Build and Publish Image">
-  </a>
-  <a href="LICENSE">
-    <img src="https://img.shields.io/github/license/webbie003/github-logs-collector" alt="License">
-  </a>
-  <a href="https://www.python.org/">
-    <img src="https://img.shields.io/badge/python-3.13-blue?logo=python" alt="Python">
-  </a>
-  <a href="https://alpinelinux.org/">
-    <img src="https://img.shields.io/badge/alpine-3.24-blue?logo=alpinelinux" alt="Alpine">
-  </a>
+  <a href="https://github.com/webbie003/github-logs-collector/releases/latest"><img src="https://img.shields.io/github/v/release/webbie003/github-logs-collector?label=version" alt="Release"></a>&nbsp;
+  <a href="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml"><img src="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml/badge.svg" alt="Build and Publish Image"></a>&nbsp;
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.13-blue?logo=python" alt="Python"></a>&nbsp;
+  <a href="https://alpinelinux.org/"><img src="https://img.shields.io/badge/alpine-3.24-blue?logo=alpinelinux" alt="Alpine"></a>&nbsp;
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/webbie003/github-logs-collector" alt="License"></a>
 </p>
 
 A lightweight, security-focused GitHub REST API polling collector for SIEM and log-management platforms.
 
 GitHub Logs Collector securely authenticates to GitHub, retrieves account activity, discovers accessible repositories, collects supported repository security alerts, deduplicates events, and writes structured newline-delimited JSON (`JSONL`) for ingestion by downstream security platforms.
 
-The project is intentionally **SIEM-neutral**.
+The project is intentionally **SIEM-Agnostic**.
 
 ---
 
@@ -32,8 +22,8 @@ The project is intentionally **SIEM-neutral**.
 
 Pull the latest image from either supported registry.
 
-| GitHub Container Registry [![GHCR Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fwebbie003%2Fgithub-logs-collector&query=downloadCount&label=GHCR%20Pulls&logo=github&color=green)](https://github.com/users/webbie003/packages/container/package/github-logs-collector) | Docker Hub [![Docker Pulls](https://img.shields.io/docker/pulls/techie003/github-logs-collector?logo=docker)](https://hub.docker.com/r/techie003/github-logs-collector) |
 |---|---|
+| GitHub Container Registry [![GHCR Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fwebbie003%2Fgithub-logs-collector&query=downloadCount&label=GHCR%20Pulls&logo=github&color=green)](https://github.com/users/webbie003/packages/container/package/github-logs-collector) | Docker Hub [![Docker Pulls](https://img.shields.io/docker/pulls/techie003/github-logs-collector?logo=docker)](https://hub.docker.com/r/techie003/github-logs-collector) |
 | **Latest image:** `docker pull ghcr.io/webbie003/github-logs-collector:latest` | **Latest image:** `docker pull techie003/github-logs-collector:latest` |
 | **Specific image:** `docker pull ghcr.io/webbie003/github-logs-collector:0.2.1` | **Specific image:** `docker pull techie003/github-logs-collector:0.2.1` |
 
@@ -73,6 +63,24 @@ Both registries publish the same release image.
 - Docker Compose deployment example
 - GitHub security-feature setup guide
 - Wazuh integration guide and example rules
+
+---
+
+### Collected Telemetry
+
+GitHub Logs Collector collects and normalises:
+
+- GitHub account activity
+- Repository discovery data
+- Dependabot alerts
+- Code scanning alerts
+- Secret scanning alerts
+
+Collected telemetry is written locally as structured JSONL for downstream SIEM or log-management ingestion.
+
+**No polled/collected telemetry from the Github is transmitted outside the container by the collector.** The collector only initiates outbound HTTPS connections to the GitHub REST API to retrieve data. Output remains within the configured log and state locations unless those files are explicitly mounted, shared, or ingested by the configured SIEM solution.
+
+For details about each data source and its behaviour, see [Collection Sources](#collection-sources).
 
 ---
 
@@ -225,7 +233,7 @@ Repository security APIs are handled independently, allowing unavailable or unsu
 
 ---
 
-# Security Model
+## Security Model
 
 GitHub Logs Collector is designed to minimise its runtime attack surface.
 
@@ -262,7 +270,7 @@ for the complete security policy and deployment guidance.
 
 ---
 
-# Runtime Image Hardening
+## Runtime Image Hardening
 
 Version `0.2.1` migrates the runtime image from Debian-based Python slim images to:
 
@@ -293,43 +301,47 @@ Images should be rebuilt and rescanned regularly.
 
 ---
 
-# Repository Structure
+## Repository Structure
 
 ```text
 github-logs-collector/
+│
 ├── .github/
 │   └── workflows/
-│       └── docker-publish.yml
+│       └── docker-publish.yml](.github/workflows/docker-publish.yml)
+│
 ├── app/
-│   ├── github_collector.py
-│   └── healthcheck.py
+│   ├── [github_collector.py](app/github_collector.py)
+│   └── [healthcheck.py](app/healthcheck.py)
 │
 ├── docs/
-│   └── GITHUB_SECURITY_SETUP.md
+│   ├── images/
+│   │   └── [ghlc_logo.png]](docs/images/ghlc_logo.png)
+│   └── [GITHUB_SECURITY_SETUP.md](docs/GITHUB_SECURITY_SETUP.md)
 │
 ├── examples/
 │   ├── docker-compose/
-│   │   ├── .env.example
-│   │   └── docker-compose.yml
+│   │   ├── [.env.example](examples/docker-compose/.env.example)
+│   │   └── docker-compose.yml](examples/docker-compose/docker-compose.yml)
 │   │
 │   └── wazuh/
-│       ├── README.md
-│       ├── local_rules.xml
-│       └── ossec-localfile.xml
+│       ├── [README.md](examples/wazuh/README.md)
+│       ├── [local_rules.xml](examples/wazuh/local_rules.xml)
+│       └── [ossec-localfile.xml](examples/wazuh/ossec-localfile.xml)
 │
-├── Dockerfile
-├── requirements.txt
-├── .dockerignore
-├── .gitignore
-├── README.md
-├── SECURITY.md
-├── CHANGELOG.md
-└── LICENSE
+├── [Dockerfile](Dockerfile)
+├── [requirements.txt](requirements.txt)
+├── [.dockerignore](.dockerignore)
+├── [.gitignore](.gitignore)
+├── [README.md](README.md)
+├── [SECURITY.md](SECURITY.md) <-- You are here.
+├── [CHANGELOG.md](CHANGELOG.md)
+└── [LICENSE]()
 ```
 
 ---
 
-# Requirements
+## Requirements
 
 Container deployment requires:
 
@@ -343,7 +355,7 @@ No inbound Internet connectivity is required.
 
 ---
 
-# GitHub Security Features
+## GitHub Security Features
 
 The collector can retrieve repository security alerts only when the corresponding GitHub feature is enabled and available.
 
@@ -361,17 +373,13 @@ Code scanning / CodeQL            Enabled where available
 
 Existing repositories should be reviewed individually because future-repository defaults do not necessarily enable features retrospectively.
 
-Full instructions are available at:
-
-```text
-docs/GITHUB_SECURITY_SETUP.md
-```
+Full instructions are available, see [GITHUB_SECURITY_SETUP.md](docs/GITHUB_SECURITY_SETUP.md)
 
 ---
 
-# Collection Sources
+## Collection Sources
 
-## Account Activity
+### Account Activity
 
 The collector retrieves GitHub events exposed to the authenticated account.
 
@@ -427,7 +435,7 @@ These conditions are handled per repository so that one unavailable security API
 
 ---
 
-# GitHub Personal Security Log Limitation
+## GitHub Personal Account API Limitation
 
 GitHub's complete personal-account Security Log is not exposed through an equivalent complete personal REST audit-log API.
 
@@ -437,7 +445,7 @@ Organisation and enterprise GitHub environments may provide richer audit-log cap
 
 ---
 
-# GitHub Authentication
+## GitHub Authentication
 
 A fine-grained GitHub personal access token should be used where possible.
 
@@ -445,13 +453,13 @@ The collector is designed for **read-only access**.
 
 Recommended permissions include:
 
-## Account Permissions
+### Account Permissions
 
 ```text
 Events: Read
 ```
 
-## Repository Permissions
+### Repository Permissions
 
 ```text
 Metadata: Read
@@ -466,21 +474,13 @@ Do not grant write or administration permissions unless a future collector featu
 
 ---
 
-# Quick Start
+## Deployment
 
-## 1. Enable GitHub Security Features
+### 1. Enable GitHub Security Features
 
-Review:
+Review the [GITHUB_SECURITY_SETUP](docs/GITHUB_SECURITY_SETUP.md) for assistance enabling the repository security products that you intend to monitor.
 
-```text
-docs/GITHUB_SECURITY_SETUP.md
-```
-
-Enable the repository security products that you intend to monitor.
-
----
-
-## 2. Clone
+### 2. Clone
 
 ```bash
 git clone git@github.com:webbie003/github-logs-collector.git
@@ -488,9 +488,7 @@ git clone git@github.com:webbie003/github-logs-collector.git
 cd github-logs-collector
 ```
 
----
-
-## 3. Configure
+### 3. Configure
 
 ```bash
 cd examples/docker-compose
@@ -507,9 +505,7 @@ GITHUB_USERNAME=YOUR_GITHUB_USERNAME
 GITHUB_TOKEN=YOUR_GITHUB_TOKEN
 ```
 
----
-
-## 4. Start
+### 4. Start
 
 ```bash
 docker compose up -d
@@ -529,7 +525,7 @@ docker logs github-logs-collector
 
 ---
 
-# Environment Configuration
+## Environment Configuration
 
 Example:
 
@@ -554,7 +550,7 @@ GITHUB_API_URL=https://api.github.com
 LOG_LEVEL=INFO
 ```
 
-## Variables
+### Variables
 
 | Variable | Description | Default |
 |---|---|---|
@@ -573,7 +569,7 @@ LOG_LEVEL=INFO
 
 ---
 
-# Protecting `.env`
+## Protecting `.env`
 
 The real `.env` contains authentication material and must never be committed.
 
@@ -593,7 +589,7 @@ git diff --cached
 
 ---
 
-# Polling
+## Polling
 
 The default polling interval is:
 
@@ -630,7 +626,7 @@ Sleep
 
 ---
 
-# Event Deduplication
+## Event Deduplication
 
 The collector stores processed event identifiers in:
 
@@ -644,7 +640,7 @@ Deleting the state volume resets deduplication history and may cause previously 
 
 ---
 
-# Successful Poll State
+## Successful Poll State
 
 After a complete successful polling cycle, the collector updates:
 
@@ -656,7 +652,7 @@ This provides an external indication that the collector is continuing to make pr
 
 ---
 
-# Docker Health Monitoring
+## Docker Health Monitoring
 
 Version `0.2.1` includes a Docker health check based on the age of the most recent successfully completed polling cycle.
 
@@ -709,7 +705,7 @@ Docker's health status is informational by itself. Docker Engine does not automa
 
 ---
 
-# JSONL Output
+## JSONL Output
 
 Default output:
 
@@ -747,7 +743,7 @@ Example:
 
 ---
 
-# Normalised Fields
+## Normalised Fields
 
 Examples include:
 
@@ -777,7 +773,7 @@ Collected data may contain sensitive repository information and should be protec
 
 ---
 
-# Docker Deployment
+## Docker Deployment
 
 The generic deployment example is located at:
 
@@ -785,10 +781,14 @@ The generic deployment example is located at:
 examples/docker-compose/
 ```
 
-Published image naming:
+Published images are available from both registries:
 
 ```text
+GHCR:
 ghcr.io/webbie003/github-logs-collector
+
+Docker Hub:
+techie003/github-logs-collector
 ```
 
 Example:
@@ -796,12 +796,16 @@ Example:
 ```yaml
 image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.1}
 ```
+OR
+```yaml
+image: techie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.1}
+```
 
-No Docker ports are required.
+No Docker ports are required or port forward is required.
 
 ---
 
-# Persistent Volumes
+## Persistent Volumes
 
 Event output:
 
@@ -827,7 +831,7 @@ Both volumes should persist across container recreation and upgrades.
 
 ---
 
-# Container Hardening
+## Container Hardening
 
 Recommended Compose controls include:
 
@@ -864,29 +868,17 @@ The container does not require:
 
 ---
 
-# Runtime Package Management
+## Runtime Package Management
 
-`pip` is used only while the image is built.
+`pip` is required only during image construction and is removed from the final runtime image as part of the project's attack-surface reduction strategy.
 
-After `requirements.txt` has been installed, the Docker build removes `pip`.
-
-Therefore this command is expected to fail in the final runtime image:
-
-```bash
-docker run --rm \
-  ghcr.io/webbie003/github-logs-collector:0.2.1 \
-  python -m pip --version
-```
-
-The absence of runtime `pip` is intentional.
-
-Application dependencies remain installed in Python `site-packages`.
+See [Runtime Image Hardening](#runtime-image-hardening).
 
 ---
 
-# Vulnerability Scanning
+## Vulnerability Scanning
 
-Container images should be scanned before release and periodically afterwards.
+Container images are scanned automatically during the release pipeline before publication.
 
 Example using Trivy:
 
@@ -904,7 +896,7 @@ Scanner databases and vulnerability information change over time, so future scan
 
 ---
 
-# GitHub API Failures
+## GitHub API Failures
 
 The collector distinguishes between:
 
@@ -919,7 +911,7 @@ Temporary API failures are retried by later polling cycles.
 
 ---
 
-# Logging
+## Troubleshooting
 
 Default:
 
@@ -939,7 +931,7 @@ Authentication tokens and Authorization headers must never be intentionally logg
 
 ---
 
-# Building Locally
+## Building Locally
 
 ```bash
 docker build \
@@ -965,7 +957,7 @@ Expected:
 
 ---
 
-# Runtime Validation
+## Runtime Validation
 
 Inspect container security configuration:
 
@@ -984,26 +976,17 @@ No mappings should normally be returned.
 
 ---
 
-# Wazuh Integration
+## Wazuh Integration
 
-Complete Wazuh integration instructions are maintained separately:
+Complete Wazuh integration instructions are maintained separately in the [README.md](examples/wazuh/README.md)
 
-```text
-examples/wazuh/README.md
-```
-
-Example configuration:
-
-```text
-examples/wazuh/ossec-localfile.xml
-examples/wazuh/local_rules.xml
-```
-
-The core collector remains SIEM-neutral.
+Example configuration files:
+- [ossec-localfile.xml](examples/wazuh/ossec-localfile.xml)
+- [local_rules.xml](examples/wazuh/local_rules.xml)
 
 ---
 
-# Data Sensitivity
+## Data Sensitivity
 
 Collected telemetry may contain:
 
@@ -1022,7 +1005,7 @@ Protect the JSONL output and downstream SIEM storage accordingly.
 
 ---
 
-# Current Limitations
+## Current Limitations
 
 - GitHub event data may not be real-time.
 - GitHub's complete personal Security Log is not exposed through an equivalent complete personal-account audit API.
@@ -1035,40 +1018,15 @@ Protect the JSONL output and downstream SIEM storage accordingly.
 
 ---
 
-# Documentation
+## Documentation
 
-GitHub security setup:
-
-```text
-docs/GITHUB_SECURITY_SETUP.md
-```
-
-Security policy:
-
-```text
-SECURITY.md
-```
-
-Wazuh integration:
-
-```text
-examples/wazuh/README.md
-```
-
-Release history:
-
-```text
-CHANGELOG.md
-```
+GitHub security setup [GITHUB_SECURITY_SETUP.md](docs/GITHUB_SECURITY_SETUP.md)
+Security policy: [SECURITY.md](SECURITY.md)
+Wazuh integration: [README.md](examples/wazuh/README.md)
+Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-# Licence
+## Licence
 
-GitHub Logs Collector is licensed under the MIT License.
-
-See:
-
-```text
-LICENSE
-```
+GitHub Logs Collector is licensed under the [MIT License](LICENSE).
