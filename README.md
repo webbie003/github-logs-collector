@@ -1,5 +1,12 @@
 # GitHub Logs Collector
 
+[![Release](https://img.shields.io/github/v/release/webbie003/github-logs-collector?label=version)](https://github.com/webbie003/github-logs-collector/releases/latest)
+[![Container](https://img.shields.io/badge/GHCR-ghcr.io%2Fwebbie003%2Fgithub--logs--collector-blue?logo=github)](https://github.com/users/webbie003/packages/container/package/github-logs-collector)
+[![GHCR Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fghcr-badge.elias.eu.org%2Fapi%2Fwebbie003%2Fgithub-logs-collector&query=downloadCount&label=GHCR%20Pulls&logo=github&color=green)](https://github.com/users/webbie003/packages/container/package/github-logs-collector)
+[![License](https://img.shields.io/github/license/webbie003/github-logs-collector)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
+[![Alpine](https://img.shields.io/badge/alpine-3.24-blue)](https://alpinelinux.org/)
+
 A lightweight, security-focused GitHub REST API polling collector for SIEM and log-management platforms.
 
 GitHub Logs Collector authenticates to GitHub, retrieves account activity, discovers accessible repositories, collects supported repository security alerts, deduplicates events, and writes structured newline-delimited JSON (`JSONL`) for ingestion by downstream security platforms.
@@ -7,12 +14,6 @@ GitHub Logs Collector authenticates to GitHub, retrieves account activity, disco
 The project is intentionally **SIEM-neutral**.
 
 The collector operates using **outbound HTTPS only** and requires no inbound network listener or published Docker ports.
-
-Current release:
-
-```text
-0.2.1
-```
 
 ---
 
