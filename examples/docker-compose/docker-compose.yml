@@ -1,6 +1,6 @@
 services:
   github-logs-collector:
-    image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.0}
+    image: ghcr.io/webbie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.2}
 
     container_name: github-logs-collector
 
