@@ -3,7 +3,7 @@ FROM python:3.13.15-alpine3.24
 LABEL org.opencontainers.image.title="GitHub Logs Collector"
 LABEL org.opencontainers.image.description="Security-focused GitHub API polling collector for SIEM and log management platforms"
 LABEL org.opencontainers.image.source="https://github.com/webbie003/github-logs-collector"
-LABEL org.opencontainers.image.version="0.2.2"
+LABEL org.opencontainers.image.version="0.2.3"
 
 # Security:
 # Prevent Python from writing bytecode files into the container filesystem.

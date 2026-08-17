@@ -110,31 +110,31 @@
   <rule id="110120" level="3">
     <if_sid>110100</if_sid>
     <field name="source.dataset">actions_workflow_run</field>
-    <description>GitHub Actions: $(github.workflow_name) on $(github.repository) triggered_by=$(github.triggering_actor) actor=$(github.actor) status=$(github.status) conclusion=$(github.conclusion)</description>
+    <description>GitHub Actions: $(github.workflow_name) on $(github.repository) by $(github.actor) status=$(github.status) conclusion=$(github.conclusion)</description>
   </rule>
 
   <rule id="110121" level="8">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">failure</field>
-    <description>GitHub Actions FAILED: $(github.workflow_name) on $(github.repository) actor=$(github.actor) triggered_by=$(github.triggering_actor) branch=$(github.head_branch)</description>
+    <description>GitHub Actions FAILED: $(github.workflow_name) on $(github.repository) by $(github.actor) branch=$(github.head_branch)</description>
   </rule>
 
   <rule id="110122" level="7">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">cancelled</field>
-    <description>GitHub Actions CANCELLED: $(github.workflow_name) on $(github.repository) triggered_by=$(github.triggering_actor) branch=$(github.head_branch)</description>
+    <description>GitHub Actions CANCELLED: $(github.workflow_name) on $(github.repository) by $(github.actor) branch=$(github.head_branch)</description>
   </rule>
 
   <rule id="110123" level="8">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">timed_out</field>
-    <description>GitHub Actions TIMED OUT: $(github.workflow_name) on $(github.repository) triggered_by=$(github.triggering_actor) branch=$(github.head_branch)</description>
+    <description>GitHub Actions TIMED OUT: $(github.workflow_name) on $(github.repository) by $(github.actor) branch=$(github.head_branch)</description>
   </rule>
 
   <rule id="110124" level="8">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">stale|action_required|startup_failure</field>
-    <description>GitHub Actions abnormal completion: $(github.workflow_name) on $(github.repository) conclusion=$(github.conclusion) triggered_by=$(github.triggering_actor)</description>
+    <description>GitHub Actions abnormal completion: $(github.workflow_name) on $(github.repository) conclusion=$(github.conclusion) by $(github.actor)</description>
   </rule>
 
   <rule id="110125" level="9">

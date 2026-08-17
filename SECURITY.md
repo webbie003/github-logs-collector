@@ -6,9 +6,10 @@ Security updates are targeted at the currently maintained release.
 
 | Version | Supported |
 |---|---|
-| 0.2.2 | Yes |
-| 0.2.1 | Upgrade recommended |
-| 0.2.0 | Upgrade recommended |
+| 0.2.3 | Yes |
+| 0.2.2 | Upgrade recommended |
+| 0.2.1 | No |
+| 0.2.0 | No |
 | < 0.2.0 | No |
 
 Users should run the latest maintained container image whenever practical.

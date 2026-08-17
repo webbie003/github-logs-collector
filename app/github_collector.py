@@ -1,38 +1,4 @@
 #!/usr/bin/env python3
-"""
-GitHub Logs Collector
-
-Outbound-only GitHub REST API polling collector for SIEM and log-management
-platforms.
-
-Security-focused v0.2.2 additions:
-- GitHub Actions workflow-run telemetry.
-- Failed, cancelled, timed-out, stale, and action-required workflow job/step
-  telemetry.
-- Workflow actor and triggering-actor attribution.
-- Security alert lifecycle changes for Dependabot, code scanning, and secret
-  scanning alerts.
-- Repository security-state change detection:
-  visibility, private/public state, archive state, and default branch.
-- Structured collector operational telemetry for warnings, failures, startup,
-  shutdown, and successful polling.
-
-Deliberately excluded from v0.2.2:
-- Docker Hub API integration.
-- Stars, watchers, fork counters, open-issue counters, and popularity metrics.
-- Repository traffic/download analytics.
-- Raw GitHub Actions console-log downloads.
-
-Security design:
-- No inbound network listener.
-- GitHub authentication is supplied at runtime.
-- Authentication tokens are never written to collector logs.
-- HTTPS certificate verification remains enabled.
-- API responses are treated as untrusted structured input.
-- Events are deduplicated using persistent SQLite state.
-- Optional/unavailable security endpoints do not terminate the collector.
-- GitHub rate limits are handled without terminating the container.
-"""
 
 from __future__ import annotations
 
@@ -52,7 +18,7 @@ import requests
 
 
 COLLECTOR_NAME = "github-logs-collector"
-COLLECTOR_VERSION = "0.2.2"
+COLLECTOR_VERSION = "0.2.3"
 
 
 # ---------------------------------------------------------------------------
@@ -1203,7 +1169,12 @@ def collect_account_events() -> int:
                             "type"
                         ),
 
-                    "repository":
+                    "repo":
+                        repo.get(
+                            "name"
+                        ),
+
+		    "repository":
                         repo.get(
                             "name"
                         ),
@@ -1445,6 +1416,9 @@ def collect_security_endpoint(
 
                     "event":
                         alert_type,
+
+		    "repo":
+			repository_name,
 
                     "repository":
                         repository_name,
@@ -1738,6 +1712,9 @@ def collect_abnormal_workflow_jobs(
                 ),
                 dataset="actions_job_failure",
                 github={
+                    "repo":
+                        repository_name,
+
                     "repository":
                         repository_name,
 
@@ -1955,6 +1932,9 @@ def collect_workflow_runs(
             ),
             dataset="actions_workflow_run",
             github={
+                "repo":
+                    repository_name,
+
                 "repository":
                     repository_name,
 
@@ -2213,7 +2193,10 @@ def collect_repository_security_state(
         timestamp=utc_timestamp(),
         dataset="repository_security_state",
         github={
-            "repository":
+            "repo":
+		full_name,
+
+	    "repository":
                 full_name,
 
             "changes":

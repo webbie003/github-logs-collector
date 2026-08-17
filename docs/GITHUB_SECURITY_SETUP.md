@@ -1,6 +1,6 @@
 # GitHub Security Setup
 
-This guide describes the recommended GitHub security configuration for **GitHub Logs Collector v0.2.2**.
+This guide describes the recommended GitHub security configuration for **GitHub Logs Collector v0.2.3**.
 
 The collector is designed for read-only GitHub access. Grant only the permissions required by enabled collection sources.
 

@@ -1,6 +1,6 @@
 # Wazuh Integration Guide
 
-This guide describes how to integrate **GitHub Logs Collector v0.2.2** with a Docker-based Wazuh deployment.
+This guide describes how to integrate **GitHub Logs Collector v0.2.3** with a Docker-based Wazuh deployment.
 
 GitHub Logs Collector writes structured JSONL to a persistent Docker volume. The Wazuh manager receives **read-only** access to that volume and monitors both collector output streams using Wazuh Logcollector.
 
@@ -134,7 +134,7 @@ examples/wazuh/
 
 ```yaml
   github-logs-collector:
-    image: techie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.2}
+    image: techie003/github-logs-collector:${COLLECTOR_VERSION:-0.2.3}
     container_name: github-logs-collector
     restart: unless-stopped
     init: true
@@ -693,7 +693,7 @@ data.log.level
 
 Because the rules now use dynamic descriptions, `rule.description` is recommended as a primary human-readable dashboard column.
 
-For v0.2.2 events, prefer:
+For v0.2.3 events, prefer:
 
 ```text
 data.github.repository
@@ -749,7 +749,7 @@ If a description contains a blank or unexpected value:
 2. run `wazuh-logtest`
 3. inspect the decoded field names
 4. confirm the corresponding field exists in that event type
-5. confirm the rule references the current v0.2.2 schema
+5. confirm the rule references the current v0.2.3 schema
 
 The current collector uses:
 

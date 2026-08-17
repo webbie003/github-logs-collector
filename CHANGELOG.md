@@ -10,6 +10,27 @@ No unreleased changes currently documented.
 
 ---
 
+## [0.2.3] - 2026-08-17
+
+### Added
+
+- Added `github.repo` as a normalized repository alias alongside `github.repository`.
+- Added Wazuh-compatible `data.github.repo` population for new events.
+
+### Changed
+
+- Improved Wazuh dynamic rule descriptions with richer repository, actor, workflow, status and conclusion context.
+- Removed `triggered_by` from primary GitHub Actions rule descriptions to reduce dashboard noise.
+- Updated Wazuh documentation for the repository alias and dynamic rule descriptions.
+
+### Compatibility
+
+- `github.repository` remains unchanged and continues to be emitted.
+- `github.repo` is an additional compatibility/dashboard field.
+- Existing indexed events are not retroactively updated.
+
+---
+
 ## [0.2.2] - 2026-08-17
 
 ### Added
