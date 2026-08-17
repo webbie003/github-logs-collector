@@ -126,7 +126,7 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.DOCKERHUB_IMAGE }}
+          repository: techie003/github-logs-collector
           readme-filepath: ./docs/DOCKERHUB.md
 
       # Create the GitHub Release only after the image has been successfully
