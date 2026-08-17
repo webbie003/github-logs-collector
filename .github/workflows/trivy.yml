@@ -1,0 +1,226 @@
+name: Trivy Security Scan
+
+on:
+  push:
+    branches:
+      - main
+
+    paths-ignore:
+      - "docs/SECURITY-STATUS.md"
+
+  schedule:
+    # Weekly Monday scan at 02:30 UTC.
+    - cron: "30 2 * * 1"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  security-events: write
+
+jobs:
+  trivy-security-scan:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for security scan
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: github-logs-collector:security-scan
+
+      # Generate machine-readable JSON used to create SECURITY-STATUS.md.
+      - name: Run Trivy JSON scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: github-logs-collector:security-scan
+          format: json
+          output: trivy-results.json
+          scanners: vuln
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+
+      # Generate SARIF for GitHub Security / Code Scanning.
+      - name: Run Trivy SARIF scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: github-logs-collector:security-scan
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container-image
+
+      - name: Generate SECURITY-STATUS.md
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          results = json.loads(
+              Path("trivy-results.json").read_text(encoding="utf-8")
+          )
+
+          counts = {
+              "UNKNOWN": 0,
+              "LOW": 0,
+              "MEDIUM": 0,
+              "HIGH": 0,
+              "CRITICAL": 0,
+          }
+
+          targets = []
+
+          for result in results.get("Results", []):
+              target = result.get("Target")
+              if target:
+                  targets.append(target)
+
+              for vulnerability in result.get("Vulnerabilities") or []:
+                  severity = vulnerability.get(
+                      "Severity",
+                      "UNKNOWN",
+                  ).upper()
+
+                  if severity not in counts:
+                      severity = "UNKNOWN"
+
+                  counts[severity] += 1
+
+          total = sum(counts.values())
+
+          now = datetime.now(timezone.utc)
+          timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+          commit = "${{ github.sha }}"
+          run_url = (
+              "https://github.com/"
+              "${{ github.repository }}"
+              "/actions/runs/"
+              "${{ github.run_id }}"
+          )
+
+          if counts["CRITICAL"] == 0 and counts["HIGH"] == 0:
+              status = "PASS"
+              summary = (
+                  "No CRITICAL or HIGH vulnerabilities were "
+                  "detected in the current container image."
+              )
+          else:
+              status = "ATTENTION REQUIRED"
+              summary = (
+                  "One or more CRITICAL or HIGH vulnerabilities "
+                  "were detected."
+              )
+
+          target_text = "\n".join(
+              f"- `{target}`"
+              for target in targets
+          )
+
+          document = f"""# Container Security Status
+
+          This file is generated automatically by the
+          **Trivy Security Scan** GitHub Actions workflow.
+
+          Manual edits may be overwritten.
+
+          ## Current Status
+
+          **Status:** `{status}`
+
+          {summary}
+
+          ## Latest Scan
+
+          | Property | Value |
+          |:---|:---|
+          | Scan time | `{timestamp}` |
+          | Commit | `{commit}` |
+          | Scanner | `Trivy` |
+          | Scan type | Container image vulnerability scan |
+          | Policy gate | `CRITICAL,HIGH` |
+
+          ## Vulnerability Summary
+
+          | Severity | Findings |
+          |:---|---:|
+          | Critical | {counts["CRITICAL"]} |
+          | High | {counts["HIGH"]} |
+          | Medium | {counts["MEDIUM"]} |
+          | Low | {counts["LOW"]} |
+          | Unknown | {counts["UNKNOWN"]} |
+          | **Total** | **{total}** |
+
+          ## Scanned Targets
+
+          {target_text or "- No targets reported by Trivy."}
+
+          ## Security Policy
+
+          Release publication is blocked when the release-gate scan
+          detects one or more `CRITICAL` or `HIGH` vulnerabilities.
+
+          `MEDIUM`, `LOW`, and `UNKNOWN` findings are reported for
+          visibility but do not currently block publication.
+
+          Vulnerability data changes over time as scanner databases and
+          upstream advisories are updated. A clean result is therefore
+          a point-in-time assessment rather than a permanent guarantee.
+
+          ## Detailed Results
+
+          High and Critical Trivy findings are uploaded to the
+          GitHub repository Security / Code Scanning interface.
+
+          [View this workflow run]({run_url})
+          """
+
+          # Remove indentation caused by the Python block.
+          document = "\n".join(
+              line.strip()
+              if line.startswith("          ")
+              else line
+              for line in document.splitlines()
+          ).strip() + "\n"
+
+          Path("docs/SECURITY-STATUS.md").write_text(
+              document,
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Commit updated security status
+        shell: bash
+        run: |
+          if git diff --quiet -- docs/SECURITY-STATUS.md; then
+            echo "SECURITY-STATUS.md is already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add docs/SECURITY-STATUS.md
+
+          git commit \
+            -m "Update automated Trivy security status"
+
+          git push

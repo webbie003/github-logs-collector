@@ -1,19 +1,12 @@
-name: Build and Publish Image
+name: Build and Publish
 
 on:
   push:
     tags:
       - "v*.*.*"
 
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version tag to build, e.g. v0.2.1"
-        required: true
-        default: "v0.2.1"
-
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -22,27 +15,18 @@ env:
   DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/github-logs-collector
 
 jobs:
-  build-and-push-image:
+  build-and-publish:
+    name: Build and Publish
     runs-on: ubuntu-latest
 
     steps:
-      - name: Determine version
-        id: version
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set release version
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.version }}"
-          else
-            TAG="${{ github.ref_name }}"
-          fi
-
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Building release ${TAG}"
-
-      - name: Checkout release source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.version.outputs.tag }}
+          echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -50,7 +34,7 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -65,13 +49,47 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/${{ env.GHCR_IMAGE }}
+            ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE }}
             ${{ env.DOCKERHUB_IMAGE }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.version.outputs.tag }}
+            type=semver,pattern={{version}}
             type=raw,value=latest
 
-      - name: Build and push Docker image
+      # Security:
+      # Build a local release candidate first so it can be scanned before
+      # anything is published to GHCR or Docker Hub.
+      - name: Build release candidate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: github-logs-collector:${{ env.RELEASE_VERSION }}
+
+      # Security:
+      # Block publication if Trivy detects HIGH or CRITICAL vulnerabilities.
+      - name: Trivy release vulnerability gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: github-logs-collector:${{ env.RELEASE_VERSION }}
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          format: table
+          exit-code: "1"
+          ignore-unfixed: false
+
+      # Security:
+      # Block publication if Trivy detects secrets in the release candidate.
+      - name: Trivy secret scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: github-logs-collector:${{ env.RELEASE_VERSION }}
+          scanners: secret
+          format: table
+          exit-code: "1"
+
+      # Publication occurs only after both Trivy gates succeed.
+      - name: Build and publish image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -80,3 +98,44 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
+
+      # Update only the runner copy of docs/DOCKERHUB.md.
+      # This file is used as the lightweight Docker Hub Overview template.
+      - name: Update Docker Hub Overview version
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          echo "Updating Docker Hub Overview to version ${VERSION}"
+
+          sed -i -E \
+            "s/Current release: \*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*/Current release: **v${VERSION}**/" \
+            docs/DOCKERHUB.md
+
+          sed -i -E \
+            "s#docker pull ${DOCKERHUB_USERNAME}/github-logs-collector:[0-9]+\.[0-9]+\.[0-9]+#docker pull ${DOCKERHUB_USERNAME}/github-logs-collector:${VERSION}#" \
+            docs/DOCKERHUB.md
+
+          echo "Updated Docker Hub Overview:"
+          cat docs/DOCKERHUB.md
+
+      - name: Update Docker Hub Overview
+        uses: peter-evans/dockerhub-description@e98e4d1628a5f3be2be7c231e50981aee98723ae
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_IMAGE }}
+          readme-filepath: ./docs/DOCKERHUB.md
+
+      # Create the GitHub Release only after the image has been successfully
+      # scanned and published to both registries.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "GitHub Logs Collector ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag

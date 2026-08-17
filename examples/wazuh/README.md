@@ -290,3 +290,4 @@ Both containers should reference the same `github_logs` volume.
 - [Logcollector Configuration](ossec-localfile.xml)
 - [Custom Rules](local_rules.xml)
 - [Release History](../../CHANGELOG.md)
+- [SECURITY-STATUS.md](../../docs/SECURITY-STATUS.md)

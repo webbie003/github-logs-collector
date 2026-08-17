@@ -260,3 +260,4 @@ docker exec github-logs-collector \
 - [Security Policy](../SECURITY.md)
 - [Wazuh Integration](../examples/wazuh/README.md)
 - [Release History](../CHANGELOG.md)
+- [SECURITY-STATUS.md](SECURITY-STATUS.md)
