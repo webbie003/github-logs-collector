@@ -1,10 +1,14 @@
 <!--
-  GitHub Logs Collector - Wazuh rule examples
+  GitHub Logs Collector - Wazuh rules
 
-  Rule range:
+  Suggested custom rule range:
     110100-110199
 
-  Verify these IDs do not conflict with other local rules before deployment.
+  Review this range before deployment to ensure it does not conflict with
+  other locally defined Wazuh rules.
+
+  Dynamic descriptions use decoded JSON fields from github-logs-collector
+  events so Wazuh alerts provide useful context directly in rule.description.
 -->
 
 <group name="github,github_logs_collector,">
@@ -16,7 +20,7 @@
   <rule id="110100" level="3">
     <decoded_as>json</decoded_as>
     <field name="source.type">github</field>
-    <description>GitHub Logs Collector event</description>
+    <description>GitHub event: dataset=$(source.dataset) repository=$(github.repository) actor=$(github.actor)</description>
   </rule>
 
 
@@ -27,31 +31,49 @@
   <rule id="110101" level="3">
     <if_sid>110100</if_sid>
     <field name="github.event">PushEvent</field>
-    <description>GitHub repository push activity</description>
+    <description>GitHub PushEvent: $(github.repository) pushed by $(github.actor) ref=$(github.ref)</description>
   </rule>
 
   <rule id="110102" level="3">
     <if_sid>110100</if_sid>
     <field name="github.event">PullRequestEvent</field>
-    <description>GitHub pull request activity</description>
+    <description>GitHub PullRequestEvent: $(github.repository) action=$(github.action) by $(github.actor)</description>
   </rule>
 
   <rule id="110103" level="4">
     <if_sid>110100</if_sid>
     <field name="github.event">CreateEvent|DeleteEvent</field>
-    <description>GitHub repository reference change</description>
+    <description>GitHub $(github.event): $(github.repository) ref=$(github.ref) by $(github.actor)</description>
   </rule>
 
   <rule id="110104" level="4">
     <if_sid>110100</if_sid>
     <field name="github.event">ReleaseEvent</field>
-    <description>GitHub release activity</description>
+    <description>GitHub ReleaseEvent: $(github.repository) action=$(github.action) by $(github.actor)</description>
   </rule>
 
   <rule id="110105" level="4">
     <if_sid>110100</if_sid>
     <field name="github.event">ForkEvent</field>
-    <description>GitHub repository fork activity</description>
+    <description>GitHub ForkEvent: $(github.repository) forked by $(github.actor)</description>
+  </rule>
+
+  <rule id="110106" level="3">
+    <if_sid>110100</if_sid>
+    <field name="github.event">IssuesEvent</field>
+    <description>GitHub IssuesEvent: $(github.repository) action=$(github.action) by $(github.actor)</description>
+  </rule>
+
+  <rule id="110107" level="3">
+    <if_sid>110100</if_sid>
+    <field name="github.event">IssueCommentEvent</field>
+    <description>GitHub IssueCommentEvent: $(github.repository) action=$(github.action) by $(github.actor)</description>
+  </rule>
+
+  <rule id="110108" level="3">
+    <if_sid>110100</if_sid>
+    <field name="github.event">WatchEvent</field>
+    <description>GitHub WatchEvent: $(github.repository) action=$(github.action) by $(github.actor)</description>
   </rule>
 
 
@@ -63,21 +85,21 @@
     <if_sid>110100</if_sid>
     <field name="source.dataset">security_alert</field>
     <field name="github.event">dependabot</field>
-    <description>GitHub Dependabot security alert</description>
+    <description>GitHub Dependabot alert #$(github.alert_number): $(github.repository) state=$(github.state)</description>
   </rule>
 
   <rule id="110111" level="8">
     <if_sid>110100</if_sid>
     <field name="source.dataset">security_alert</field>
     <field name="github.event">code_scanning</field>
-    <description>GitHub Code Scanning security alert</description>
+    <description>GitHub Code Scanning alert #$(github.alert_number): $(github.repository) state=$(github.state)</description>
   </rule>
 
   <rule id="110112" level="10">
     <if_sid>110100</if_sid>
     <field name="source.dataset">security_alert</field>
     <field name="github.event">secret_scanning</field>
-    <description>GitHub Secret Scanning alert</description>
+    <description>GitHub Secret Scanning alert #$(github.alert_number): $(github.repository) state=$(github.state)</description>
   </rule>
 
 
@@ -88,37 +110,37 @@
   <rule id="110120" level="3">
     <if_sid>110100</if_sid>
     <field name="source.dataset">actions_workflow_run</field>
-    <description>GitHub Actions workflow activity</description>
+    <description>GitHub Actions: $(github.workflow_name) on $(github.repository) triggered_by=$(github.triggering_actor) actor=$(github.actor) status=$(github.status) conclusion=$(github.conclusion)</description>
   </rule>
 
   <rule id="110121" level="8">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">failure</field>
-    <description>GitHub Actions workflow failed</description>
+    <description>GitHub Actions FAILED: $(github.workflow_name) on $(github.repository) actor=$(github.actor) triggered_by=$(github.triggering_actor) branch=$(github.head_branch)</description>
   </rule>
 
   <rule id="110122" level="7">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">cancelled</field>
-    <description>GitHub Actions workflow cancelled</description>
+    <description>GitHub Actions CANCELLED: $(github.workflow_name) on $(github.repository) triggered_by=$(github.triggering_actor) branch=$(github.head_branch)</description>
   </rule>
 
   <rule id="110123" level="8">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">timed_out</field>
-    <description>GitHub Actions workflow timed out</description>
+    <description>GitHub Actions TIMED OUT: $(github.workflow_name) on $(github.repository) triggered_by=$(github.triggering_actor) branch=$(github.head_branch)</description>
   </rule>
 
   <rule id="110124" level="8">
     <if_sid>110120</if_sid>
     <field name="github.conclusion">stale|action_required|startup_failure</field>
-    <description>GitHub Actions workflow completed abnormally</description>
+    <description>GitHub Actions abnormal completion: $(github.workflow_name) on $(github.repository) conclusion=$(github.conclusion) triggered_by=$(github.triggering_actor)</description>
   </rule>
 
   <rule id="110125" level="9">
     <if_sid>110100</if_sid>
     <field name="source.dataset">actions_job_failure</field>
-    <description>GitHub Actions failed or abnormal job/step detected</description>
+    <description>GitHub Actions job failure: $(github.job_name) on $(github.repository) conclusion=$(github.conclusion) run_id=$(github.workflow_run_id)</description>
   </rule>
 
 
@@ -129,7 +151,7 @@
   <rule id="110130" level="8">
     <if_sid>110100</if_sid>
     <field name="source.dataset">repository_security_state</field>
-    <description>GitHub repository security-relevant state changed</description>
+    <description>GitHub repository security state changed: $(github.repository)</description>
   </rule>
 
 </group>
@@ -145,19 +167,19 @@
     <decoded_as>json</decoded_as>
     <field name="source.type">collector</field>
     <field name="source.dataset">operational</field>
-    <description>GitHub Logs Collector operational event</description>
+    <description>GitHub Logs Collector: $(log.event) - $(message)</description>
   </rule>
 
   <rule id="110151" level="5">
     <if_sid>110150</if_sid>
     <field name="log.level">warning</field>
-    <description>GitHub Logs Collector warning</description>
+    <description>GitHub Logs Collector WARNING: $(log.event) - $(message)</description>
   </rule>
 
   <rule id="110152" level="8">
     <if_sid>110150</if_sid>
     <field name="log.level">error</field>
-    <description>GitHub Logs Collector error</description>
+    <description>GitHub Logs Collector ERROR: $(log.event) - $(message)</description>
   </rule>
 
   <rule id="110153" level="10">
@@ -169,7 +191,7 @@
   <rule id="110154" level="7">
     <if_sid>110150</if_sid>
     <field name="log.event">github_rate_limited</field>
-    <description>GitHub Logs Collector API rate limited</description>
+    <description>GitHub Logs Collector rate limited: retry_after=$(details.retry_after)s</description>
   </rule>
 
   <rule id="110155" level="10">
@@ -193,7 +215,25 @@
   <rule id="110158" level="7">
     <if_sid>110150</if_sid>
     <field name="log.event">github_api_timeout|github_api_communication_failure</field>
-    <description>GitHub Logs Collector API communication problem</description>
+    <description>GitHub Logs Collector API communication problem: $(log.event)</description>
+  </rule>
+
+  <rule id="110159" level="8">
+    <if_sid>110150</if_sid>
+    <field name="log.event">actions_collection_failed|actions_collector_failed|actions_job_detail_failed</field>
+    <description>GitHub Logs Collector Actions collection failure: $(log.event)</description>
+  </rule>
+
+  <rule id="110160" level="8">
+    <if_sid>110150</if_sid>
+    <field name="log.event">security_api_request_failed|security_collector_failed</field>
+    <description>GitHub Logs Collector security API collection failure: $(log.event)</description>
+  </rule>
+
+  <rule id="110161" level="3">
+    <if_sid>110150</if_sid>
+    <field name="log.event">poll_complete</field>
+    <description>GitHub Logs Collector poll complete: repos=$(details.repositories) events=$(details.account_events) security=$(details.security_events) workflows=$(details.workflow_runs) abnormal_jobs=$(details.abnormal_action_jobs)</description>
   </rule>
 
 </group>

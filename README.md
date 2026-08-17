@@ -287,7 +287,8 @@ github-logs-collector/
 │
 ├── .github/
 │   └── workflows/
-│       └── <a href=".github/workflows/docker-publish.yml">docker-publish.yml</a>
+│       ├── <a href=".github/workflows/docker-publish.yml">docker-publish.yml</a>
+│       └── <a href=".github/workflows/trivy.yml">trivy.yml</a>
 │
 ├── app/
 │   ├── <a href="app/github_collector.py">github_collector.py</a>
