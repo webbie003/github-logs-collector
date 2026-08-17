@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
-
 """
 GitHub Logs Collector
 
-Outbound-only GitHub REST API polling collector for SIEM and
-log-management platforms.
+Outbound-only GitHub REST API polling collector for SIEM and log-management
+platforms.
+
+Security-focused v0.2.2 additions:
+- GitHub Actions workflow-run telemetry.
+- Failed, cancelled, timed-out, stale, and action-required workflow job/step
+  telemetry.
+- Workflow actor and triggering-actor attribution.
+- Security alert lifecycle changes for Dependabot, code scanning, and secret
+  scanning alerts.
+- Repository security-state change detection:
+  visibility, private/public state, archive state, and default branch.
+- Structured collector operational telemetry for warnings, failures, startup,
+  shutdown, and successful polling.
+
+Deliberately excluded from v0.2.2:
+- Docker Hub API integration.
+- Stars, watchers, fork counters, open-issue counters, and popularity metrics.
+- Repository traffic/download analytics.
+- Raw GitHub Actions console-log downloads.
 
 Security design:
 - No inbound network listener.
@@ -13,8 +30,7 @@ Security design:
 - HTTPS certificate verification remains enabled.
 - API responses are treated as untrusted structured input.
 - Events are deduplicated using persistent SQLite state.
-- Security endpoints that are unavailable for a repository do not
-  terminate the collector.
+- Optional/unavailable security endpoints do not terminate the collector.
 - GitHub rate limits are handled without terminating the container.
 """
 
@@ -33,6 +49,10 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+
+COLLECTOR_NAME = "github-logs-collector"
+COLLECTOR_VERSION = "0.2.2"
 
 
 # ---------------------------------------------------------------------------
@@ -57,11 +77,75 @@ class GitHubRateLimitError(GitHubCollectorError):
         retry_after: int = 60,
     ) -> None:
         super().__init__(message)
-
         self.retry_after = max(
             retry_after,
             1,
         )
+
+
+# ---------------------------------------------------------------------------
+# Environment helpers
+# ---------------------------------------------------------------------------
+
+
+def env_bool(
+    name: str,
+    default: bool,
+) -> bool:
+    """Read a strict boolean environment variable."""
+
+    raw = os.getenv(
+        name,
+        "true" if default else "false",
+    ).strip().lower()
+
+    if raw in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return True
+
+    if raw in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return False
+
+    raise RuntimeError(
+        f"{name} must be true or false"
+    )
+
+
+def env_int(
+    name: str,
+    default: int,
+    minimum: int,
+) -> int:
+    """Read and validate an integer environment variable."""
+
+    try:
+        value = int(
+            os.getenv(
+                name,
+                str(default),
+            )
+        )
+
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{name} must be an integer"
+        ) from exc
+
+    if value < minimum:
+        raise RuntimeError(
+            f"{name} must be at least {minimum}"
+        )
+
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -84,31 +168,41 @@ GITHUB_API_URL = os.getenv(
     "https://api.github.com",
 ).rstrip("/")
 
-POLL_INTERVAL = int(
-    os.getenv(
-        "POLL_INTERVAL",
-        "300",
-    )
+POLL_INTERVAL = env_int(
+    "POLL_INTERVAL",
+    300,
+    60,
 )
 
-REQUEST_TIMEOUT = int(
-    os.getenv(
-        "REQUEST_TIMEOUT",
-        "20",
-    )
+REQUEST_TIMEOUT = env_int(
+    "REQUEST_TIMEOUT",
+    20,
+    1,
 )
 
-MAX_PAGES = int(
-    os.getenv(
-        "MAX_PAGES",
-        "10",
-    )
+MAX_PAGES = env_int(
+    "MAX_PAGES",
+    10,
+    1,
+)
+
+ACTIONS_MAX_RUNS_PER_REPOSITORY = env_int(
+    "ACTIONS_MAX_RUNS_PER_REPOSITORY",
+    20,
+    1,
 )
 
 LOG_FILE = Path(
     os.getenv(
         "GITHUB_LOG_FILE",
         "/var/log/github/events.jsonl",
+    )
+)
+
+COLLECTOR_LOG_FILE = Path(
+    os.getenv(
+        "COLLECTOR_LOG_FILE",
+        "/var/log/github/collector.jsonl",
     )
 )
 
@@ -131,6 +225,36 @@ LOG_LEVEL = os.getenv(
     "INFO",
 ).upper()
 
+GITHUB_ACCOUNT_EVENTS_ENABLED = env_bool(
+    "GITHUB_ACCOUNT_EVENTS_ENABLED",
+    True,
+)
+
+GITHUB_SECURITY_ALERTS_ENABLED = env_bool(
+    "GITHUB_SECURITY_ALERTS_ENABLED",
+    True,
+)
+
+GITHUB_ACTIONS_ENABLED = env_bool(
+    "GITHUB_ACTIONS_ENABLED",
+    True,
+)
+
+GITHUB_ACTION_FAILURE_DETAILS_ENABLED = env_bool(
+    "GITHUB_ACTION_FAILURE_DETAILS_ENABLED",
+    True,
+)
+
+GITHUB_REPOSITORY_SECURITY_STATE_ENABLED = env_bool(
+    "GITHUB_REPOSITORY_SECURITY_STATE_ENABLED",
+    True,
+)
+
+COLLECTOR_OPERATIONAL_LOG_ENABLED = env_bool(
+    "COLLECTOR_OPERATIONAL_LOG_ENABLED",
+    True,
+)
+
 
 # ---------------------------------------------------------------------------
 # Configuration validation
@@ -145,21 +269,6 @@ if not GITHUB_USERNAME:
 if not GITHUB_TOKEN:
     raise RuntimeError(
         "GITHUB_TOKEN is not configured"
-    )
-
-if POLL_INTERVAL < 60:
-    raise RuntimeError(
-        "POLL_INTERVAL must be at least 60 seconds"
-    )
-
-if REQUEST_TIMEOUT < 1:
-    raise RuntimeError(
-        "REQUEST_TIMEOUT must be at least 1 second"
-    )
-
-if MAX_PAGES < 1:
-    raise RuntimeError(
-        "MAX_PAGES must be at least 1"
     )
 
 
@@ -179,7 +288,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(
-    "github-logs-collector"
+    COLLECTOR_NAME
 )
 
 
@@ -222,9 +331,7 @@ signal.signal(
 
 
 def utc_timestamp() -> str:
-    """
-    Return current UTC timestamp in ISO 8601 format.
-    """
+    """Return current UTC timestamp in ISO 8601 format."""
 
     return datetime.now(
         timezone.utc
@@ -234,9 +341,7 @@ def utc_timestamp() -> str:
 def sleep_interruptible(
     seconds: int,
 ) -> None:
-    """
-    Sleep while allowing container shutdown to complete promptly.
-    """
+    """Sleep while still allowing prompt container shutdown."""
 
     end_time = time.monotonic() + seconds
 
@@ -255,6 +360,81 @@ def sleep_interruptible(
                 1.0,
             )
         )
+
+
+def safe_dict(
+    value: Any,
+) -> dict[str, Any]:
+    """Return a dictionary for untrusted structured input."""
+
+    if isinstance(
+        value,
+        dict,
+    ):
+        return value
+
+    return {}
+
+
+def safe_list(
+    value: Any,
+) -> list[Any]:
+    """Return a list for untrusted structured input."""
+
+    if isinstance(
+        value,
+        list,
+    ):
+        return value
+
+    return []
+
+
+def build_event(
+    *,
+    timestamp: str | None,
+    dataset: str,
+    github: dict[str, Any] | None = None,
+    event: dict[str, Any] | None = None,
+    payload: Any = None,
+) -> dict[str, Any]:
+    """Build the common SIEM-oriented event envelope."""
+
+    output: dict[str, Any] = {
+        "@timestamp":
+            timestamp
+            or utc_timestamp(),
+
+        "collector": {
+            "name":
+                COLLECTOR_NAME,
+
+            "version":
+                COLLECTOR_VERSION,
+
+            "mode":
+                "poll",
+        },
+
+        "source": {
+            "type":
+                "github",
+
+            "dataset":
+                dataset,
+        },
+    }
+
+    if event:
+        output["event"] = event
+
+    if github:
+        output["github"] = github
+
+    if payload is not None:
+        output["payload"] = payload
+
+    return output
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +456,7 @@ session.headers.update(
             "2022-11-28",
 
         "User-Agent":
-            "github-logs-collector/0.2.1",
+            f"{COLLECTOR_NAME}/{COLLECTOR_VERSION}",
     }
 )
 
@@ -291,8 +471,8 @@ def initialise_database() -> sqlite3.Connection:
     Open the persistent collector state database.
 
     Security:
-    Only event IDs and collector state are stored here.
-    Authentication credentials are never persisted.
+    Only event IDs and non-secret collector state are persisted.
+    Authentication credentials are never stored.
     """
 
     STATE_DATABASE.parent.mkdir(
@@ -315,6 +495,16 @@ def initialise_database() -> sqlite3.Connection:
         """
     )
 
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS collector_state (
+            state_key TEXT PRIMARY KEY,
+            state_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+
     connection.commit()
 
     return connection
@@ -327,9 +517,7 @@ def event_seen(
     source: str,
     event_id: str,
 ) -> bool:
-    """
-    Return True if an event has already been processed.
-    """
+    """Return True if an event has already been processed."""
 
     row = DB.execute(
         """
@@ -351,9 +539,7 @@ def mark_event_seen(
     source: str,
     event_id: str,
 ) -> None:
-    """
-    Record an event as successfully processed.
-    """
+    """Record an event as successfully processed."""
 
     DB.execute(
         """
@@ -375,19 +561,91 @@ def mark_event_seen(
     DB.commit()
 
 
+def get_state(
+    state_key: str,
+) -> Any | None:
+    """Read JSON state from persistent collector storage."""
+
+    row = DB.execute(
+        """
+        SELECT state_value
+        FROM collector_state
+        WHERE state_key = ?
+        """,
+        (
+            state_key,
+        ),
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    try:
+        return json.loads(
+            row[0]
+        )
+
+    except (
+        TypeError,
+        json.JSONDecodeError,
+    ):
+        logger.warning(
+            "Invalid collector state key=%s; replacing baseline",
+            state_key,
+        )
+
+        return None
+
+
+def set_state(
+    state_key: str,
+    value: Any,
+) -> None:
+    """Persist JSON state."""
+
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+    DB.execute(
+        """
+        INSERT INTO collector_state
+        (
+            state_key,
+            state_value,
+            updated_at
+        )
+        VALUES (?, ?, ?)
+        ON CONFLICT(state_key)
+        DO UPDATE SET
+            state_value = excluded.state_value,
+            updated_at = excluded.updated_at
+        """,
+        (
+            state_key,
+            encoded,
+            utc_timestamp(),
+        ),
+    )
+
+    DB.commit()
+
+
 # ---------------------------------------------------------------------------
 # JSONL output
 # ---------------------------------------------------------------------------
 
 
-def write_event(
+def append_jsonl(
+    path: Path,
     event: dict[str, Any],
 ) -> None:
-    """
-    Append one compact JSON object to the JSONL event stream.
-    """
+    """Append one compact JSON object to a JSONL file."""
 
-    LOG_FILE.parent.mkdir(
+    path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
@@ -398,7 +656,7 @@ def write_event(
         ensure_ascii=False,
     )
 
-    with LOG_FILE.open(
+    with path.open(
         "a",
         encoding="utf-8",
     ) as log_handle:
@@ -407,10 +665,112 @@ def write_event(
         )
 
 
+def write_event(
+    event: dict[str, Any],
+) -> None:
+    """Append one event to the main SIEM event stream."""
+
+    append_jsonl(
+        LOG_FILE,
+        event,
+    )
+
+
+def write_new_event(
+    source: str,
+    event_id: str,
+    output: dict[str, Any],
+) -> bool:
+    """
+    Write a new event and mark it processed only after a successful write.
+    """
+
+    if event_seen(
+        source,
+        event_id,
+    ):
+        return False
+
+    write_event(
+        output
+    )
+
+    mark_event_seen(
+        source,
+        event_id,
+    )
+
+    return True
+
+
+def write_operational_event(
+    level: str,
+    event_name: str,
+    message: str,
+    **details: Any,
+) -> None:
+    """
+    Write collector operational telemetry to a separate JSONL stream.
+
+    This stream is suitable for SIEM health/error monitoring without mixing
+    collector runtime problems into GitHub activity telemetry.
+    """
+
+    if not COLLECTOR_OPERATIONAL_LOG_ENABLED:
+        return
+
+    output: dict[str, Any] = {
+        "@timestamp":
+            utc_timestamp(),
+
+        "collector": {
+            "name":
+                COLLECTOR_NAME,
+
+            "version":
+                COLLECTOR_VERSION,
+
+            "mode":
+                "poll",
+        },
+
+        "source": {
+            "type":
+                "collector",
+
+            "dataset":
+                "operational",
+        },
+
+        "log": {
+            "level":
+                level.lower(),
+
+            "event":
+                event_name,
+        },
+
+        "message":
+            message,
+    }
+
+    if details:
+        output["details"] = details
+
+    try:
+        append_jsonl(
+            COLLECTOR_LOG_FILE,
+            output,
+        )
+
+    except OSError:
+        logger.exception(
+            "Failed to write collector operational event"
+        )
+
+
 def record_successful_poll() -> None:
-    """
-    Update persistent health state after a complete successful poll.
-    """
+    """Update persistent health state after a complete successful poll."""
 
     LAST_SUCCESS_FILE.parent.mkdir(
         parents=True,
@@ -431,9 +791,7 @@ def record_successful_poll() -> None:
 def calculate_retry_after(
     response: requests.Response,
 ) -> int:
-    """
-    Calculate how long to wait after GitHub rate limiting.
-    """
+    """Calculate how long to wait after GitHub rate limiting."""
 
     retry_after = response.headers.get(
         "Retry-After"
@@ -473,17 +831,13 @@ def calculate_retry_after(
         except ValueError:
             pass
 
-    # GitHub recommends backing off when a secondary
-    # limit is encountered without a usable reset value.
     return 60
 
 
 def response_is_rate_limited(
     response: requests.Response,
 ) -> bool:
-    """
-    Determine whether a 403/429 response represents rate limiting.
-    """
+    """Determine whether a 403/429 response represents rate limiting."""
 
     if response.status_code == 429:
         return True
@@ -587,15 +941,47 @@ def github_get(
     return response
 
 
+def github_optional_get(
+    endpoint: str,
+    params: dict[str, Any] | None = None,
+) -> requests.Response | None:
+    """
+    Query an optional endpoint.
+
+    HTTP 403/404 are treated as disabled/unavailable/insufficient-read-access
+    for that repository. Rate-limit 403 responses have already been converted
+    to GitHubRateLimitError by github_get().
+    """
+
+    try:
+        return github_get(
+            endpoint,
+            params=params,
+        )
+
+    except requests.HTTPError as exc:
+        status = (
+            exc.response.status_code
+            if exc.response is not None
+            else None
+        )
+
+        if status in {
+            403,
+            404,
+        }:
+            return None
+
+        raise
+
+
 # ---------------------------------------------------------------------------
 # Identity verification
 # ---------------------------------------------------------------------------
 
 
 def verify_identity() -> None:
-    """
-    Confirm that the access token authenticates as GITHUB_USERNAME.
-    """
+    """Confirm that the token authenticates as GITHUB_USERNAME."""
 
     response = github_get(
         "/user"
@@ -639,6 +1025,13 @@ def verify_identity() -> None:
         authenticated_login,
     )
 
+    write_operational_event(
+        "info",
+        "github_authentication_success",
+        "GitHub API authentication succeeded",
+        github_username=authenticated_login,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Repository discovery
@@ -646,9 +1039,7 @@ def verify_identity() -> None:
 
 
 def get_repositories() -> list[dict[str, Any]]:
-    """
-    Enumerate repositories visible to the authenticated account.
-    """
+    """Enumerate repositories visible to the authenticated account."""
 
     repositories: list[
         dict[str, Any]
@@ -658,16 +1049,23 @@ def get_repositories() -> list[dict[str, Any]]:
         1,
         MAX_PAGES + 1,
     ):
-
         response = github_get(
             "/user/repos",
             params={
-                "visibility": "all",
+                "visibility":
+                    "all",
+
                 "affiliation":
                     "owner,collaborator,organization_member",
-                "per_page": 100,
-                "page": page,
-                "sort": "updated",
+
+                "per_page":
+                    100,
+
+                "page":
+                    page,
+
+                "sort":
+                    "updated",
             },
         )
 
@@ -705,9 +1103,13 @@ def collect_account_events() -> int:
     """
     Collect authenticated-user GitHub activity.
 
-    GitHub may return events already observed during earlier poll cycles;
-    SQLite state prevents duplicate JSONL output.
+    Existing event types include PushEvent, PullRequestEvent, IssuesEvent,
+    IssueCommentEvent, CreateEvent, DeleteEvent, ReleaseEvent, ForkEvent,
+    WatchEvent, and any other event types GitHub returns for the account.
     """
+
+    if not GITHUB_ACCOUNT_EVENTS_ENABLED:
+        return 0
 
     collected = 0
 
@@ -715,7 +1117,6 @@ def collect_account_events() -> int:
         1,
         MAX_PAGES + 1,
     ):
-
         response = github_get(
             (
                 f"/users/"
@@ -723,8 +1124,11 @@ def collect_account_events() -> int:
                 f"/events"
             ),
             params={
-                "per_page": 100,
-                "page": page,
+                "per_page":
+                    100,
+
+                "page":
+                    page,
             },
         )
 
@@ -738,20 +1142,18 @@ def collect_account_events() -> int:
                 "Unexpected account events response"
             )
 
-        # Oldest first produces chronological JSONL output
-        # within the fetched batch.
-        for event in reversed(
+        # Oldest first within the fetched batch.
+        for item in reversed(
             events
         ):
-
             if not isinstance(
-                event,
+                item,
                 dict,
             ):
                 continue
 
             event_id = str(
-                event.get(
+                item.get(
                     "id",
                     "",
                 )
@@ -760,102 +1162,108 @@ def collect_account_events() -> int:
             if not event_id:
                 continue
 
-            source = (
-                "github_account_event"
-            )
-
-            if event_seen(
-                source,
-                event_id,
-            ):
-                continue
-
-            actor = (
-                event.get(
+            actor = safe_dict(
+                item.get(
                     "actor"
                 )
-                or {}
             )
 
-            repo = (
-                event.get(
+            repo = safe_dict(
+                item.get(
                     "repo"
                 )
-                or {}
             )
 
-            output = {
-                "@timestamp":
-                    event.get(
+            org = safe_dict(
+                item.get(
+                    "org"
+                )
+            )
+
+            payload = safe_dict(
+                item.get(
+                    "payload"
+                )
+            )
+
+            output = build_event(
+                timestamp=(
+                    item.get(
                         "created_at"
                     )
-                    or utc_timestamp(),
-
-                "collector": {
-                    "name":
-                        "github-logs-collector",
-
-                    "mode":
-                        "poll",
-                },
-
-                "source": {
-                    "type":
-                        "github",
-
-                    "dataset":
-                        "account_event",
-                },
-
-                "github": {
+                    or utc_timestamp()
+                ),
+                dataset="account_event",
+                github={
                     "event_id":
                         event_id,
 
                     "event":
-                        event.get(
+                        item.get(
                             "type"
                         ),
 
                     "repository":
                         repo.get(
                             "name"
-                        )
-                        if isinstance(
-                            repo,
-                            dict,
-                        )
-                        else None,
+                        ),
 
                     "actor":
                         actor.get(
                             "login"
-                        )
-                        if isinstance(
-                            actor,
-                            dict,
-                        )
-                        else None,
+                        ),
+
+                    "organization":
+                        org.get(
+                            "login"
+                        ),
 
                     "public":
-                        event.get(
+                        item.get(
                             "public"
                         ),
+
+                    "action":
+                        payload.get(
+                            "action"
+                        ),
+
+                    "ref":
+                        payload.get(
+                            "ref"
+                        ),
+
+                    "before":
+                        payload.get(
+                            "before"
+                        ),
+
+                    "after":
+                        payload.get(
+                            "after"
+                        ),
                 },
+                event={
+                    "category":
+                        "repository",
 
-                "payload":
-                    event,
-            }
-
-            write_event(
-                output
+                    "type":
+                        str(
+                            item.get(
+                                "type",
+                                "unknown",
+                            )
+                        ),
+                },
+                payload=item,
             )
 
-            mark_event_seen(
-                source,
+            if write_new_event(
+                "github_account_event",
                 event_id,
-            )
-
-            collected += 1
+                output,
+            ):
+                collected += 1
 
         if len(events) < 100:
             break
@@ -864,7 +1272,7 @@ def collect_account_events() -> int:
 
 
 # ---------------------------------------------------------------------------
-# Repository security collection
+# Repository security alert collection
 # ---------------------------------------------------------------------------
 
 
@@ -880,16 +1288,72 @@ SECURITY_ENDPOINTS = {
 }
 
 
+def alert_event_timestamp(
+    alert: dict[str, Any],
+) -> str:
+    """Choose the best available lifecycle timestamp for an alert."""
+
+    for field in (
+        "updated_at",
+        "dismissed_at",
+        "fixed_at",
+        "resolved_at",
+        "created_at",
+    ):
+        value = alert.get(
+            field
+        )
+
+        if value:
+            return str(
+                value
+            )
+
+    return utc_timestamp()
+
+
+def alert_lifecycle_id(
+    repository_name: str,
+    alert_type: str,
+    alert: dict[str, Any],
+) -> str | None:
+    """Build an ID that changes when an alert's lifecycle state changes."""
+
+    number = alert.get(
+        "number"
+    )
+
+    if number is None:
+        return None
+
+    state = alert.get(
+        "state"
+    )
+
+    timestamp = alert_event_timestamp(
+        alert
+    )
+
+    return (
+        f"{repository_name}:"
+        f"{alert_type}:"
+        f"{number}:"
+        f"{state}:"
+        f"{timestamp}"
+    )
+
+
 def collect_security_endpoint(
     repository_name: str,
     alert_type: str,
     endpoint: str,
 ) -> int:
     """
-    Collect one type of security alert from one repository.
+    Collect one security-alert type for one repository.
 
-    403 and 404 are treated as an unavailable feature or insufficient
-    permission for that repository rather than as a collector failure.
+    No state filter is sent, allowing GitHub to return lifecycle states that
+    the endpoint makes available instead of restricting collection to only
+    currently-open alerts.
     """
 
     collected = 0
@@ -898,47 +1362,30 @@ def collect_security_endpoint(
         1,
         MAX_PAGES + 1,
     ):
+        response = github_optional_get(
+            (
+                f"/repos/"
+                f"{repository_name}/"
+                f"{endpoint}"
+            ),
+            params={
+                "per_page":
+                    100,
 
-        try:
-            response = github_get(
-                (
-                    f"/repos/"
-                    f"{repository_name}/"
-                    f"{endpoint}"
-                ),
-                params={
-                    "per_page": 100,
-                    "page": page,
-                    "state": "open",
-                },
+                "page":
+                    page,
+            },
+        )
+
+        if response is None:
+            logger.info(
+                "Skipping unavailable security API "
+                "repository=%s type=%s",
+                repository_name,
+                alert_type,
             )
 
-        except requests.HTTPError as exc:
-
-            status = (
-                exc.response.status_code
-                if exc.response
-                is not None
-                else None
-            )
-
-            if status in (
-                403,
-                404,
-            ):
-                logger.info(
-                    "Skipping unavailable security API "
-                    "repository=%s "
-                    "type=%s "
-                    "status=%s",
-                    repository_name,
-                    alert_type,
-                    status,
-                )
-
-                return collected
-
-            raise
+            return collected
 
         alerts = response.json()
 
@@ -948,69 +1395,51 @@ def collect_security_endpoint(
         ):
             logger.warning(
                 "Unexpected security API response "
-                "repository=%s "
-                "type=%s",
+                "repository=%s type=%s",
                 repository_name,
                 alert_type,
+            )
+
+            write_operational_event(
+                "warning",
+                "unexpected_security_api_response",
+                "Unexpected GitHub security API response",
+                repository=repository_name,
+                alert_type=alert_type,
             )
 
             return collected
 
         for alert in alerts:
-
             if not isinstance(
                 alert,
                 dict,
             ):
                 continue
 
+            event_id = alert_lifecycle_id(
+                repository_name,
+                alert_type,
+                alert,
+            )
+
+            if event_id is None:
+                continue
+
             number = alert.get(
                 "number"
             )
 
-            if number is None:
-                continue
-
-            event_id = (
-                f"{repository_name}:"
-                f"{alert_type}:"
-                f"{number}"
+            state = alert.get(
+                "state"
             )
 
-            source = (
-                "github_security_alert"
-            )
-
-            if event_seen(
-                source,
-                event_id,
-            ):
-                continue
-
-            output = {
-                "@timestamp":
-                    alert.get(
-                        "created_at"
-                    )
-                    or utc_timestamp(),
-
-                "collector": {
-                    "name":
-                        "github-logs-collector",
-
-                    "mode":
-                        "poll",
-                },
-
-                "source": {
-                    "type":
-                        "github",
-
-                    "dataset":
-                        "security_alert",
-                },
-
-                "github": {
+            output = build_event(
+                timestamp=alert_event_timestamp(
+                    alert
+                ),
+                dataset="security_alert",
+                github={
                     "event_id":
                         event_id,
 
@@ -1024,25 +1453,30 @@ def collect_security_endpoint(
                         number,
 
                     "state":
-                        alert.get(
-                            "state"
+                        state,
+                },
+                event={
+                    "category":
+                        "security",
+
+                    "type":
+                        "alert",
+
+                    "action":
+                        str(
+                            state
+                            or "observed"
                         ),
                 },
-
-                "payload":
-                    alert,
-            }
-
-            write_event(
-                output
+                payload=alert,
             )
 
-            mark_event_seen(
-                source,
+            if write_new_event(
+                "github_security_alert",
                 event_id,
-            )
-
-            collected += 1
+                output,
+            ):
+                collected += 1
 
         if len(alerts) < 100:
             break
@@ -1053,9 +1487,10 @@ def collect_security_endpoint(
 def collect_security_alerts(
     repository: dict[str, Any],
 ) -> int:
-    """
-    Collect all supported security alert categories for one repository.
-    """
+    """Collect supported GitHub security alerts for one repository."""
+
+    if not GITHUB_SECURITY_ALERTS_ENABLED:
+        return 0
 
     full_name = str(
         repository.get(
@@ -1071,9 +1506,8 @@ def collect_security_alerts(
 
     for (
         alert_type,
-        endpoint
+        endpoint,
     ) in SECURITY_ENDPOINTS.items():
-
         if shutdown_requested:
             break
 
@@ -1087,33 +1521,740 @@ def collect_security_alerts(
             )
 
         except GitHubRateLimitError:
-            # Rate limits must propagate to the poll loop so
-            # the entire collector backs off.
             raise
 
         except requests.RequestException as exc:
             logger.warning(
                 "Security API request failed "
-                "repository=%s "
-                "type=%s "
-                "error=%s",
+                "repository=%s type=%s error=%s",
                 full_name,
                 alert_type,
                 type(exc).__name__,
             )
 
+            write_operational_event(
+                "warning",
+                "security_api_request_failed",
+                "GitHub security API request failed",
+                repository=full_name,
+                alert_type=alert_type,
+                error_type=type(exc).__name__,
+            )
+
         except Exception:
-            # One problematic repository or security API must
-            # not terminate the entire collection cycle.
             logger.exception(
                 "Security collector failed "
-                "repository=%s "
-                "type=%s",
+                "repository=%s type=%s",
                 full_name,
                 alert_type,
             )
 
+            write_operational_event(
+                "error",
+                "security_collector_failed",
+                "GitHub security collector failed",
+                repository=full_name,
+                alert_type=alert_type,
+            )
+
     return collected
+
+
+# ---------------------------------------------------------------------------
+# GitHub Actions security telemetry
+# ---------------------------------------------------------------------------
+
+
+ABNORMAL_ACTION_CONCLUSIONS = {
+    "failure",
+    "cancelled",
+    "timed_out",
+    "stale",
+    "action_required",
+    "startup_failure",
+}
+
+
+def collect_abnormal_workflow_jobs(
+    repository_name: str,
+    run_id: int,
+    run_attempt: int,
+) -> int:
+    """
+    Collect only security/operationally interesting failed workflow details.
+
+    Successful jobs and steps are intentionally not emitted as separate events
+    because the workflow-run event already records successful execution.
+    """
+
+    if not GITHUB_ACTION_FAILURE_DETAILS_ENABLED:
+        return 0
+
+    collected = 0
+
+    for page in range(
+        1,
+        MAX_PAGES + 1,
+    ):
+        response = github_optional_get(
+            (
+                f"/repos/{repository_name}"
+                f"/actions/runs/{run_id}/jobs"
+            ),
+            params={
+                "per_page":
+                    100,
+
+                "page":
+                    page,
+            },
+        )
+
+        if response is None:
+            return collected
+
+        body = response.json()
+
+        if not isinstance(
+            body,
+            dict,
+        ):
+            return collected
+
+        jobs = safe_list(
+            body.get(
+                "jobs"
+            )
+        )
+
+        for job in jobs:
+            if not isinstance(
+                job,
+                dict,
+            ):
+                continue
+
+            job_conclusion = str(
+                job.get(
+                    "conclusion"
+                )
+                or ""
+            ).strip()
+
+            steps = safe_list(
+                job.get(
+                    "steps"
+                )
+            )
+
+            abnormal_steps = []
+
+            for step in steps:
+                if not isinstance(
+                    step,
+                    dict,
+                ):
+                    continue
+
+                step_conclusion = str(
+                    step.get(
+                        "conclusion"
+                    )
+                    or ""
+                ).strip()
+
+                if (
+                    step_conclusion
+                    not in ABNORMAL_ACTION_CONCLUSIONS
+                ):
+                    continue
+
+                abnormal_steps.append(
+                    {
+                        "number":
+                            step.get(
+                                "number"
+                            ),
+
+                        "name":
+                            step.get(
+                                "name"
+                            ),
+
+                        "status":
+                            step.get(
+                                "status"
+                            ),
+
+                        "conclusion":
+                            step.get(
+                                "conclusion"
+                            ),
+
+                        "started_at":
+                            step.get(
+                                "started_at"
+                            ),
+
+                        "completed_at":
+                            step.get(
+                                "completed_at"
+                            ),
+                    }
+                )
+
+            if (
+                job_conclusion
+                not in ABNORMAL_ACTION_CONCLUSIONS
+                and not abnormal_steps
+            ):
+                continue
+
+            job_id = job.get(
+                "id"
+            )
+
+            if job_id is None:
+                continue
+
+            event_id = (
+                f"{repository_name}:"
+                f"{run_id}:"
+                f"{run_attempt}:"
+                f"{job_id}:"
+                f"{job_conclusion}:"
+                f"{job.get('completed_at')}"
+            )
+
+            output = build_event(
+                timestamp=(
+                    job.get(
+                        "completed_at"
+                    )
+                    or job.get(
+                        "started_at"
+                    )
+                    or utc_timestamp()
+                ),
+                dataset="actions_job_failure",
+                github={
+                    "repository":
+                        repository_name,
+
+                    "workflow_run_id":
+                        run_id,
+
+                    "run_attempt":
+                        run_attempt,
+
+                    "job_id":
+                        job_id,
+
+                    "job_name":
+                        job.get(
+                            "name"
+                        ),
+
+                    "status":
+                        job.get(
+                            "status"
+                        ),
+
+                    "conclusion":
+                        job.get(
+                            "conclusion"
+                        ),
+
+                    "runner_name":
+                        job.get(
+                            "runner_name"
+                        ),
+
+                    "runner_group_name":
+                        job.get(
+                            "runner_group_name"
+                        ),
+
+                    "abnormal_steps":
+                        abnormal_steps,
+                },
+                event={
+                    "category":
+                        "ci_cd",
+
+                    "type":
+                        "workflow_job",
+
+                    "action":
+                        "abnormal_completion",
+
+                    "outcome":
+                        job.get(
+                            "conclusion"
+                        ),
+                },
+                payload=job,
+            )
+
+            if write_new_event(
+                "github_actions_job_failure",
+                event_id,
+                output,
+            ):
+                collected += 1
+
+        if len(jobs) < 100:
+            break
+
+    return collected
+
+
+def collect_workflow_runs(
+    repository_name: str,
+) -> tuple[int, int]:
+    """
+    Collect workflow run changes for a repository.
+
+    Every workflow run state/conclusion change is logged. Detailed job/step
+    events are fetched only when a completed run has an abnormal conclusion.
+    """
+
+    if not GITHUB_ACTIONS_ENABLED:
+        return (
+            0,
+            0,
+        )
+
+    runs_collected = 0
+    abnormal_jobs_collected = 0
+
+    response = github_optional_get(
+        (
+            f"/repos/{repository_name}"
+            f"/actions/runs"
+        ),
+        params={
+            "per_page":
+                min(
+                    ACTIONS_MAX_RUNS_PER_REPOSITORY,
+                    100,
+                ),
+        },
+    )
+
+    if response is None:
+        return (
+            0,
+            0,
+        )
+
+    body = response.json()
+
+    if not isinstance(
+        body,
+        dict,
+    ):
+        return (
+            0,
+            0,
+        )
+
+    runs = safe_list(
+        body.get(
+            "workflow_runs"
+        )
+    )
+
+    for run in runs[
+        :ACTIONS_MAX_RUNS_PER_REPOSITORY
+    ]:
+        if not isinstance(
+            run,
+            dict,
+        ):
+            continue
+
+        run_id = run.get(
+            "id"
+        )
+
+        if run_id is None:
+            continue
+
+        try:
+            run_attempt = int(
+                run.get(
+                    "run_attempt"
+                )
+                or 1
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            run_attempt = 1
+
+        status = str(
+            run.get(
+                "status"
+            )
+            or ""
+        ).strip()
+
+        conclusion = str(
+            run.get(
+                "conclusion"
+            )
+            or ""
+        ).strip()
+
+        updated_at = (
+            run.get(
+                "updated_at"
+            )
+            or run.get(
+                "run_started_at"
+            )
+            or run.get(
+                "created_at"
+            )
+            or utc_timestamp()
+        )
+
+        event_id = (
+            f"{repository_name}:"
+            f"{run_id}:"
+            f"{run_attempt}:"
+            f"{status}:"
+            f"{conclusion}:"
+            f"{updated_at}"
+        )
+
+        actor = safe_dict(
+            run.get(
+                "actor"
+            )
+        )
+
+        triggering_actor = safe_dict(
+            run.get(
+                "triggering_actor"
+            )
+        )
+
+        head_repository = safe_dict(
+            run.get(
+                "head_repository"
+            )
+        )
+
+        output = build_event(
+            timestamp=str(
+                updated_at
+            ),
+            dataset="actions_workflow_run",
+            github={
+                "repository":
+                    repository_name,
+
+                "workflow_run_id":
+                    run_id,
+
+                "workflow_id":
+                    run.get(
+                        "workflow_id"
+                    ),
+
+                "workflow_name":
+                    run.get(
+                        "name"
+                    ),
+
+                "run_number":
+                    run.get(
+                        "run_number"
+                    ),
+
+                "run_attempt":
+                    run_attempt,
+
+                "trigger_event":
+                    run.get(
+                        "event"
+                    ),
+
+                "status":
+                    status,
+
+                "conclusion":
+                    conclusion
+                    or None,
+
+                "head_branch":
+                    run.get(
+                        "head_branch"
+                    ),
+
+                "head_sha":
+                    run.get(
+                        "head_sha"
+                    ),
+
+                "head_repository":
+                    head_repository.get(
+                        "full_name"
+                    ),
+
+                "actor":
+                    actor.get(
+                        "login"
+                    ),
+
+                "triggering_actor":
+                    triggering_actor.get(
+                        "login"
+                    ),
+
+                "html_url":
+                    run.get(
+                        "html_url"
+                    ),
+            },
+            event={
+                "category":
+                    "ci_cd",
+
+                "type":
+                    "workflow_run",
+
+                "action":
+                    status
+                    or "observed",
+
+                "outcome":
+                    conclusion
+                    or None,
+            },
+            payload=run,
+        )
+
+        changed = write_new_event(
+            "github_actions_workflow_run",
+            event_id,
+            output,
+        )
+
+        if not changed:
+            continue
+
+        runs_collected += 1
+
+        if (
+            status == "completed"
+            and conclusion
+            in ABNORMAL_ACTION_CONCLUSIONS
+        ):
+            try:
+                abnormal_jobs_collected += (
+                    collect_abnormal_workflow_jobs(
+                        repository_name,
+                        int(
+                            run_id
+                        ),
+                        run_attempt,
+                    )
+                )
+
+            except GitHubRateLimitError:
+                raise
+
+            except requests.RequestException as exc:
+                logger.warning(
+                    "Actions job-detail request failed "
+                    "repository=%s run_id=%s error=%s",
+                    repository_name,
+                    run_id,
+                    type(exc).__name__,
+                )
+
+                write_operational_event(
+                    "warning",
+                    "actions_job_detail_failed",
+                    "GitHub Actions job-detail request failed",
+                    repository=repository_name,
+                    workflow_run_id=run_id,
+                    error_type=type(exc).__name__,
+                )
+
+    return (
+        runs_collected,
+        abnormal_jobs_collected,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Repository security-state collection
+# ---------------------------------------------------------------------------
+
+
+def repository_security_state(
+    repository: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract only repository attributes with clear security relevance."""
+
+    return {
+        "visibility":
+            repository.get(
+                "visibility"
+            ),
+
+        "private":
+            repository.get(
+                "private"
+            ),
+
+        "archived":
+            repository.get(
+                "archived"
+            ),
+
+        "default_branch":
+            repository.get(
+                "default_branch"
+            ),
+    }
+
+
+def collect_repository_security_state(
+    repository: dict[str, Any],
+) -> int:
+    """
+    Detect repository security-state changes.
+
+    The first observation creates a baseline without emitting an alert. Future
+    differences emit one event containing only changed fields with before/after
+    values.
+    """
+
+    if not GITHUB_REPOSITORY_SECURITY_STATE_ENABLED:
+        return 0
+
+    full_name = str(
+        repository.get(
+            "full_name",
+            "",
+        )
+    ).strip()
+
+    if not full_name:
+        return 0
+
+    current = repository_security_state(
+        repository
+    )
+
+    state_key = (
+        "repository_security_state:"
+        f"{full_name}"
+    )
+
+    previous = get_state(
+        state_key
+    )
+
+    if not isinstance(
+        previous,
+        dict,
+    ):
+        set_state(
+            state_key,
+            current,
+        )
+
+        logger.debug(
+            "Repository security baseline created repository=%s",
+            full_name,
+        )
+
+        return 0
+
+    changes: dict[str, Any] = {}
+
+    for field in (
+        "visibility",
+        "private",
+        "archived",
+        "default_branch",
+    ):
+        before = previous.get(
+            field
+        )
+
+        after = current.get(
+            field
+        )
+
+        if before == after:
+            continue
+
+        changes[field] = {
+            "before":
+                before,
+
+            "after":
+                after,
+        }
+
+    if not changes:
+        return 0
+
+    output = build_event(
+        timestamp=utc_timestamp(),
+        dataset="repository_security_state",
+        github={
+            "repository":
+                full_name,
+
+            "changes":
+                changes,
+
+            "current":
+                current,
+        },
+        event={
+            "category":
+                "repository",
+
+            "type":
+                "security_state",
+
+            "action":
+                "changed",
+        },
+    )
+
+    write_event(
+        output
+    )
+
+    # Update the baseline only after the event has been written successfully.
+    set_state(
+        state_key,
+        current,
+    )
+
+    logger.warning(
+        "Repository security state changed repository=%s fields=%s",
+        full_name,
+        ",".join(
+            sorted(
+                changes.keys()
+            )
+        ),
+    )
+
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -1122,13 +2263,13 @@ def collect_security_alerts(
 
 
 def poll() -> None:
-    """
-    Run one complete GitHub collection cycle.
-    """
+    """Run one complete security-focused GitHub collection cycle."""
 
     logger.info(
         "Starting polling cycle"
     )
+
+    cycle_started = time.monotonic()
 
     account_events = (
         collect_account_events()
@@ -1139,11 +2280,50 @@ def poll() -> None:
     )
 
     security_events = 0
+    workflow_runs = 0
+    abnormal_action_jobs = 0
+    repository_security_changes = 0
 
     for repository in repositories:
-
         if shutdown_requested:
             break
+
+        full_name = str(
+            repository.get(
+                "full_name",
+                "",
+            )
+        ).strip()
+
+        if not full_name:
+            continue
+
+        try:
+            repository_security_changes += (
+                collect_repository_security_state(
+                    repository
+                )
+            )
+
+        except sqlite3.Error:
+            raise
+
+        except OSError:
+            raise
+
+        except Exception:
+            logger.exception(
+                "Repository security-state collection failed "
+                "repository=%s",
+                full_name,
+            )
+
+            write_operational_event(
+                "error",
+                "repository_security_state_failed",
+                "Repository security-state collection failed",
+                repository=full_name,
+            )
 
         security_events += (
             collect_security_alerts(
@@ -1151,19 +2331,95 @@ def poll() -> None:
             )
         )
 
+        try:
+            (
+                run_count,
+                abnormal_job_count,
+            ) = collect_workflow_runs(
+                full_name
+            )
+
+            workflow_runs += run_count
+            abnormal_action_jobs += (
+                abnormal_job_count
+            )
+
+        except GitHubRateLimitError:
+            raise
+
+        except requests.RequestException as exc:
+            logger.warning(
+                "Actions collection failed "
+                "repository=%s error=%s",
+                full_name,
+                type(exc).__name__,
+            )
+
+            write_operational_event(
+                "warning",
+                "actions_collection_failed",
+                "GitHub Actions collection failed",
+                repository=full_name,
+                error_type=type(exc).__name__,
+            )
+
+        except Exception:
+            logger.exception(
+                "Actions collector failed repository=%s",
+                full_name,
+            )
+
+            write_operational_event(
+                "error",
+                "actions_collector_failed",
+                "GitHub Actions collector failed",
+                repository=full_name,
+            )
+
     if shutdown_requested:
         return
 
     record_successful_poll()
 
+    elapsed_ms = int(
+        (
+            time.monotonic()
+            - cycle_started
+        )
+        * 1000
+    )
+
     logger.info(
         "Poll complete "
         "account_events=%d "
         "repositories=%d "
-        "security_events=%d",
+        "security_events=%d "
+        "workflow_runs=%d "
+        "abnormal_action_jobs=%d "
+        "repository_security_changes=%d "
+        "duration_ms=%d",
         account_events,
         len(repositories),
         security_events,
+        workflow_runs,
+        abnormal_action_jobs,
+        repository_security_changes,
+        elapsed_ms,
+    )
+
+    write_operational_event(
+        "info",
+        "poll_complete",
+        "Collector polling cycle completed successfully",
+        account_events=account_events,
+        repositories=len(
+            repositories
+        ),
+        security_events=security_events,
+        workflow_runs=workflow_runs,
+        abnormal_action_jobs=abnormal_action_jobs,
+        repository_security_changes=repository_security_changes,
+        duration_ms=elapsed_ms,
     )
 
 
@@ -1176,18 +2432,25 @@ def main() -> None:
     """
     Main collector loop.
 
-    Runtime API failures are logged and retried rather than terminating
-    the container.
+    Runtime API failures are logged and retried rather than terminating the
+    container.
     """
 
     logger.info(
-        "GitHub Logs Collector starting"
+        "%s v%s starting",
+        COLLECTOR_NAME,
+        COLLECTOR_VERSION,
     )
 
-    # Authentication is retried instead of allowing a temporary
-    # GitHub/network failure to cause a Docker restart loop.
-    while not shutdown_requested:
+    write_operational_event(
+        "info",
+        "collector_start",
+        "GitHub Logs Collector starting",
+    )
 
+    # Retry authentication rather than entering a Docker restart loop for a
+    # temporary GitHub/network problem.
+    while not shutdown_requested:
         try:
             verify_identity()
             break
@@ -1199,6 +2462,13 @@ def main() -> None:
                 exc.retry_after,
             )
 
+            write_operational_event(
+                "warning",
+                "github_rate_limited",
+                "GitHub rate limited during authentication",
+                retry_after=exc.retry_after,
+            )
+
             sleep_interruptible(
                 exc.retry_after
             )
@@ -1207,6 +2477,12 @@ def main() -> None:
             logger.error(
                 "%s; retrying in 60s",
                 exc,
+            )
+
+            write_operational_event(
+                "error",
+                "github_authentication_failed",
+                "GitHub authentication failed",
             )
 
             sleep_interruptible(
@@ -1220,6 +2496,13 @@ def main() -> None:
                 type(exc).__name__,
             )
 
+            write_operational_event(
+                "error",
+                "github_connection_failure",
+                "GitHub connection failure during authentication",
+                error_type=type(exc).__name__,
+            )
+
             sleep_interruptible(
                 60
             )
@@ -1228,6 +2511,12 @@ def main() -> None:
             logger.exception(
                 "GitHub identity verification failed; "
                 "retrying in 60s"
+            )
+
+            write_operational_event(
+                "error",
+                "github_identity_verification_failed",
+                "GitHub identity verification failed",
             )
 
             sleep_interruptible(
@@ -1243,7 +2532,6 @@ def main() -> None:
     )
 
     while not shutdown_requested:
-
         cycle_started = time.monotonic()
 
         try:
@@ -1254,6 +2542,13 @@ def main() -> None:
                 "GitHub API rate limit reached; "
                 "backing off for %ss",
                 exc.retry_after,
+            )
+
+            write_operational_event(
+                "warning",
+                "github_rate_limited",
+                "GitHub API rate limit reached",
+                retry_after=exc.retry_after,
             )
 
             sleep_interruptible(
@@ -1268,6 +2563,12 @@ def main() -> None:
                 "retrying in 60s"
             )
 
+            write_operational_event(
+                "error",
+                "github_authentication_failed",
+                "GitHub authentication failed during polling",
+            )
+
             sleep_interruptible(
                 60
             )
@@ -1280,11 +2581,24 @@ def main() -> None:
                 "polling will continue"
             )
 
+            write_operational_event(
+                "warning",
+                "github_api_timeout",
+                "GitHub API request timed out",
+            )
+
         except requests.RequestException as exc:
             logger.warning(
                 "GitHub API communication failure "
                 "error=%s; polling will continue",
                 type(exc).__name__,
+            )
+
+            write_operational_event(
+                "warning",
+                "github_api_communication_failure",
+                "GitHub API communication failure",
+                error_type=type(exc).__name__,
             )
 
         except sqlite3.Error:
@@ -1293,19 +2607,34 @@ def main() -> None:
                 "polling will continue"
             )
 
+            write_operational_event(
+                "error",
+                "sqlite_operation_failed",
+                "SQLite state operation failed",
+            )
+
         except OSError:
             logger.exception(
                 "Filesystem operation failed; "
                 "polling will continue"
             )
 
+            write_operational_event(
+                "error",
+                "filesystem_operation_failed",
+                "Filesystem operation failed",
+            )
+
         except Exception:
-            # Last-resort safety net:
-            # a single unexpected polling error must not terminate
-            # the long-running collector process.
             logger.exception(
                 "Collector polling cycle failed; "
                 "polling will continue"
+            )
+
+            write_operational_event(
+                "error",
+                "poll_cycle_failed",
+                "Collector polling cycle failed",
             )
 
         if shutdown_requested:
@@ -1326,7 +2655,14 @@ def main() -> None:
         )
 
     logger.info(
-        "GitHub Logs Collector stopped"
+        "%s stopped",
+        COLLECTOR_NAME,
+    )
+
+    write_operational_event(
+        "info",
+        "collector_stop",
+        "GitHub Logs Collector stopped",
     )
 
 
@@ -1336,7 +2672,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-
     try:
         main()
 

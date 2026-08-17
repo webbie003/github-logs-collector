@@ -1,19 +1,24 @@
 <!--
   GitHub Logs Collector - Wazuh localfile example
 
-  Purpose:
-  Instruct Wazuh Logcollector to monitor JSONL events produced by
-  github-logs-collector.
+  Both event streams are JSON Lines and are mounted read-only into
+  the Wazuh manager through the shared github_logs Docker volume.
 
-  The collector operates independently of Wazuh and can also feed
-  other SIEM/log-management platforms.
+  events.jsonl:
+    GitHub account, repository, Actions and security telemetry.
 
-  Security:
-  Mount the github_logs volume read-only into the Wazuh manager
-  whenever possible.
+  collector.jsonl:
+    Collector operational/security health telemetry.
 -->
 
+<!-- GitHub activity and security telemetry -->
 <localfile>
   <log_format>json</log_format>
   <location>/var/log/github/events.jsonl</location>
+</localfile>
+
+<!-- GitHub Logs Collector operational/security telemetry -->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/github/collector.jsonl</location>
 </localfile>

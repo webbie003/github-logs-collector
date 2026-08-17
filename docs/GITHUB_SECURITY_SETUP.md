@@ -1,420 +1,262 @@
 # GitHub Security Setup
 
-This document describes the GitHub security settings required or recommended for repositories monitored by `github-logs-collector`.
+This guide describes the recommended GitHub security configuration for **GitHub Logs Collector v0.2.2**.
 
-## Objectives
+The collector is designed for read-only GitHub access. Grant only the permissions required by enabled collection sources.
 
-The configuration is intended to:
+---
 
-- Enable GitHub security detections where available
-- Allow `github-logs-collector` to retrieve repository security alerts
-- Reduce the chance that new repositories are created without baseline security controls
-- Ensure existing repositories are reviewed and configured individually
-- Apply least-privilege access to the collector credential
-- Improve central security visibility through Wazuh or another SIEM
+## Recommended Fine-Grained Personal Access Token
 
-## Recommended Security Features
-
-Enable the following features where supported and appropriate:
-
-- Dependabot alerts
-- Secret scanning
-- Push protection
-- Code scanning / CodeQL
-
-These features are separate from the repository's `SECURITY.md` policy.
-
-## New Repositories
-
-Where GitHub provides account-level or organization-level controls, enable the applicable options so security features are automatically enabled for future repositories.
-
-Recommended future-repository defaults include:
-
-- Dependabot alerts
-- Secret scanning
-- Push protection
-- Code scanning / CodeQL where an appropriate default configuration is available
-
-Automatic settings for future repositories reduce administrative overhead, but they do not replace validation of existing repositories.
-
-# Existing Repository Security Monitoring Requirements
-
-> **Important:** Enabling GitHub security features for future repositories does **not necessarily enable those features on repositories that already exist**.
-
-The `github-logs-collector` can only retrieve security alerts from a repository when the corresponding GitHub security feature is enabled and the collector's GitHub credential has permission to read those alerts.
-
-Existing repositories that are to be monitored must therefore be reviewed **individually**.
-
-## Required Settings for Existing Repositories
-
-For **each existing repository** that should be monitored:
-
-1. Open the repository in GitHub.
-2. Select **Settings**.
-3. Select **Advanced Security** or **Code security and analysis**, depending on the GitHub interface currently presented.
-4. Review and enable the applicable security features:
-   - **Dependabot alerts**
-   - **Secret scanning**
-   - **Push protection**, where available
-   - **Code scanning / CodeQL**, where required
-5. Repeat these steps for **every existing repository** that should be monitored by `github-logs-collector`.
-
-These settings are repository-specific.
-
-Enabling automatic security settings for newly created repositories does not guarantee that older repositories have been updated.
-
-## Why This Is Required
-
-If a security feature is not enabled for a repository, `github-logs-collector` may receive errors when querying the associated GitHub security API.
-
-Typical collector messages include:
+Recommended permissions:
 
 ```text
-Security API request failed repository=<owner>/<repository> type=dependabot error=HTTPError
+Account:
+  Events: Read-only
+
+Repository:
+  Metadata: Read-only
+  Actions: Read-only
+  Dependabot alerts: Read-only
+  Code scanning alerts: Read-only
+  Secret scanning alerts: Read-only
 ```
 
-```text
-Skipping unavailable security API repository=<owner>/<repository> type=code_scanning status=404
-```
+`Actions: Read-only` is required only when GitHub Actions telemetry is enabled.
 
-```text
-Skipping unavailable security API repository=<owner>/<repository> type=secret_scanning status=404
-```
+Do not grant write or administration permissions unless a future feature explicitly requires them.
 
-These messages do not necessarily indicate a fault in `github-logs-collector`.
-
-They can indicate that the corresponding GitHub security capability is:
-
-- Not enabled
-- Not configured
-- Not available
-- Not licensed
-- Not supported for the repository
-- Not accessible using the collector credential
-
-## Repository Discovery vs Security API Availability
-
-Repository discovery and security-feature availability are separate.
-
-For example, a log entry such as:
-
-```text
-repository=webbie003/github-logs-collector type=dependabot
-```
-
-shows that the collector has discovered and is processing the repository.
-
-If the Dependabot query then fails, this does not mean the repository itself is missing from collector scope.
-
-Instead, troubleshoot:
-
-```text
-Dependabot feature state
-Dependabot alert permissions
-Repository eligibility
-Token access
-```
-
-The same principle applies to code scanning and secret scanning.
-
-## Existing Repository Checklist
-
-For every existing repository that is intended to be monitored:
-
-- [ ] Dependabot alerts enabled
-- [ ] Secret scanning enabled, where available
-- [ ] Push protection enabled, where available
-- [ ] Code scanning / CodeQL enabled or configured, where required
-- [ ] Collector credential has permission to read Dependabot alerts
-- [ ] Collector credential has permission to read secret scanning alerts
-- [ ] Collector credential has permission to read code scanning alerts
-- [ ] Repository is included in the collector credential's repository scope
-- [ ] Repository appears in `github-logs-collector` polling
-- [ ] Collector logs no longer show unexpected security API errors for the repository
-
-## Code Scanning / CodeQL
-
-Enabling access to code scanning alerts does not by itself create code scanning results.
-
-A repository normally also requires a scanning configuration, such as:
-
-- CodeQL default setup
-- CodeQL advanced setup
-- Another supported scanner uploading SARIF results
-
-If no analysis has been configured, the repository may have no code scanning alerts to collect.
-
-### Recommended CodeQL Configuration
-
-Where appropriate:
-
-1. Open the repository.
-2. Select **Settings**.
-3. Open **Advanced Security** or **Code security and analysis**.
-4. Locate **Code scanning**.
-5. Enable **CodeQL default setup**, or configure an appropriate advanced workflow.
-6. Confirm the analysis completes successfully.
-7. Confirm the collector can query code scanning alerts.
-
-CodeQL configuration requirements vary depending on repository language and project structure.
-
-## Dependabot
-
-Enable Dependabot alerts for repositories that should be monitored for vulnerable dependencies.
-
-If applicable to the repository, also consider:
-
-- Dependabot security updates
-- Dependabot version updates
-
-These are separate from the collector's ability to read alert information.
-
-A repository may have Dependabot alerts enabled without Dependabot version updates being configured.
-
-### Recommended Dependabot Settings
-
-Where appropriate:
-
-```text
-Dependency graph              Enabled
-Dependabot alerts             Enabled
-Dependabot security updates   Enabled
-Dependabot version updates    Optional / repository-specific
-```
-
-## Secret Scanning
-
-Enable secret scanning where available.
-
-Where supported, also enable:
-
-- Push protection
-- Additional or generic secret-pattern detection where appropriate
-
-Push protection is preventative.
-
-Secret scanning alerts provide detection and alerting.
-
-Together:
-
-```text
-Developer push
-      ↓
-Push protection
-      ↓
-Potential secret blocked
-      ↓
-Secret scanning
-      ↓
-Detection / alert
-      ↓
-github-logs-collector
-      ↓
-Wazuh / SIEM
-```
-
-## Collector Credential Permissions
-
-For a fine-grained GitHub personal access token, configure the minimum required repository access and permissions.
-
-Common read permissions for security monitoring include:
-
-```text
-Metadata                  Read
-Contents                  Read
-Dependabot alerts         Read
-Code scanning alerts      Read
-Secret scanning alerts    Read
-```
-
-Use repository access appropriate to the deployment:
-
-- Selected repositories, where practical
-- All repositories only when the collector is intentionally intended to monitor all repositories
-
-Do not grant write permissions unless the collector has a documented feature that requires them.
+---
 
 ## Repository Access
 
-When creating or updating the fine-grained credential, ensure that newly created repositories are included in its repository access scope.
+Restrict the token to only the repositories that should be monitored where practical.
 
-If the credential is configured for:
+Repository discovery and security-feature availability are separate conditions: a repository may be visible to the token while a specific security API remains disabled or unavailable.
 
-```text
-Only select repositories
-```
+---
 
-a newly created repository may need to be added manually.
+## Dependency Graph and Dependabot
 
-If the collector can enumerate a repository through another endpoint but cannot access security APIs, inspect both:
+For repositories that should provide dependency vulnerability telemetry, enable:
 
 ```text
-Repository access scope
-Security API permissions
+Dependency graph
+Dependabot alerts
 ```
 
-## Interpreting API Errors
+Dependabot security updates are optional.
 
-When troubleshooting collector errors, capture the HTTP status code and GitHub response message where possible.
+The collector uses the Dependabot alerts API in read-only mode and can record alert lifecycle changes where the API exposes them.
 
-Typical interpretations:
+---
+
+## Code Scanning
+
+Enable Code Scanning / CodeQL where available.
+
+The collector requires:
 
 ```text
-401 -> Authentication failure or invalid credential
-
-403 -> Permission, policy, feature entitlement,
-       repository access, rate limit, or token issue
-
-404 -> Endpoint/resource/feature unavailable,
-       disabled, inaccessible, or not configured
+Code scanning alerts: Read-only
 ```
 
-The exact meaning depends on the GitHub API and repository configuration.
+---
 
-The collector should preferably log:
+## Secret Scanning
+
+Enable where available:
 
 ```text
-repository
-security API type
-HTTP status
-GitHub response message
+Secret scanning
+Push protection
 ```
 
-Example:
+The collector requires:
 
 ```text
-Security API request failed repository=example/repository type=dependabot status=403 message="Resource not accessible by personal access token"
+Secret scanning alerts: Read-only
 ```
 
-This is significantly more useful than:
+Treat secret-scanning output as sensitive security data.
+
+---
+
+## GitHub Actions Monitoring
+
+Enable collector-side Actions monitoring with:
+
+```env
+GITHUB_ACTIONS_ENABLED=true
+```
+
+Grant:
 
 ```text
-error=HTTPError
+Actions: Read-only
 ```
 
-alone.
+The collector can record:
 
-## New Repository Validation
+- workflow name
+- workflow run ID
+- workflow ID
+- run number
+- run attempt
+- trigger event
+- status
+- conclusion
+- branch/tag
+- commit SHA
+- actor
+- triggering actor
 
-Even when automatic settings are enabled for future repositories, verify new repositories after creation.
+---
 
-Suggested validation:
+## Abnormal Workflow Job and Step Monitoring
 
-- [ ] Repository is included in collector scope
-- [ ] Repository is included in token repository access
-- [ ] Dependabot alerts enabled
-- [ ] Secret scanning enabled where available
-- [ ] Push protection enabled where available
-- [ ] Code scanning configured where required
-- [ ] Collector can successfully query enabled security APIs
-- [ ] No unexplained 403 or 404 security API responses are generated
+Enable:
 
-## `SECURITY.md` Is Separate
+```env
+GITHUB_ACTION_FAILURE_DETAILS_ENABLED=true
+```
 
-A repository containing a `SECURITY.md` file has a published **security policy**.
-
-`SECURITY.md` does **not** enable:
-
-- Dependabot alerts
-- Secret scanning
-- Push protection
-- Code scanning
-
-The security policy and GitHub's automated security-analysis features are separate controls.
-
-The presence of `SECURITY.md` must not be used as an indication that a repository is fully configured for `github-logs-collector` security monitoring.
-
-## Recommended Repository Security Baseline
-
-For repositories where all relevant features are available, the desired state is:
+Detailed job/step collection is focused on abnormal outcomes:
 
 ```text
-Repository
-│
-├── SECURITY.md
-│   └── Vulnerability reporting policy
-│
-├── Dependency graph
-│
-├── Dependabot alerts
-│
-├── Dependabot security updates
-│
-├── Secret scanning
-│
-├── Push protection
-│
-└── Code scanning / CodeQL
+failure
+cancelled
+timed_out
+stale
+action_required
+startup_failure
 ```
 
-The collector then provides central monitoring of supported alert APIs.
+Successful workflow runs are still recorded, but successful jobs/steps are not emitted separately.
 
-## Security Feature Exceptions
+Raw GitHub Actions console logs are not downloaded. This reduces noise and avoids unnecessarily collecting potentially sensitive build output.
 
-Not every GitHub security capability will necessarily be available on every repository.
+---
 
-If a capability cannot be enabled:
+## Repository Security-State Monitoring
 
-1. Confirm the GitHub plan and repository visibility.
-2. Confirm repository eligibility.
-3. Confirm organization/account policy.
-4. Document the exception.
-5. Ensure the collector handles the API as unavailable rather than repeatedly treating it as a critical collector failure.
+Enable:
 
-## Collector Verification
+```env
+GITHUB_REPOSITORY_SECURITY_STATE_ENABLED=true
+```
 
-After changing GitHub security settings, monitor the collector:
+The collector monitors only security-relevant repository state:
+
+```text
+visibility
+private/public state
+archived/unarchived state
+default branch
+```
+
+The first observation creates a baseline. Later changes generate security-state events.
+
+Stars, watchers, open-issue counts and fork counters are intentionally not monitored as security-state telemetry.
+
+---
+
+## Existing Repositories
+
+Review existing repositories individually. Settings intended for future repositories do not necessarily configure existing repositories retrospectively.
+
+Verify where applicable:
+
+```text
+Dependency graph
+Dependabot alerts
+Secret scanning
+Push protection
+Code scanning / CodeQL
+GitHub Actions access
+```
+
+---
+
+## HTTP 401
+
+An HTTP `401` normally indicates authentication failure. Check token validity, expiration/revocation, configured username and runtime secret injection.
+
+Never print the token or Authorization header while troubleshooting.
+
+---
+
+## HTTP 403
+
+An HTTP `403` can indicate insufficient permission, repository policy restrictions, API rate limiting, or unavailable security features.
+
+The collector detects rate-limit responses separately and backs off instead of terminating.
+
+---
+
+## HTTP 404
+
+An HTTP `404` from a repository security endpoint can mean the feature is disabled, unsupported, outside token scope or inaccessible to the authenticated account.
+
+Unavailable repository security endpoints are handled independently.
+
+---
+
+## Token Storage
+
+Supply the GitHub token at runtime.
+
+For local/homelab use:
 
 ```bash
-docker logs -f github-logs-collector
+chmod 600 .env
 ```
 
-Successful queries with no current findings may return an empty result rather than an alert.
+Do not:
 
-Previously observed errors such as:
+- commit `.env`
+- place the token in the Dockerfile
+- use the token as a build argument
+- hard-code it into Python
+- print it in logs
+- expose the Authorization header
 
-```text
-Skipping unavailable security API repository=<owner>/<repo> type=code_scanning status=404
+---
+
+## Validation
+
+Review collector runtime logs:
+
+```bash
+docker logs github-logs-collector
 ```
 
-should be investigated again after enabling the corresponding repository feature.
+Inspect GitHub events:
 
-## Credential Rotation
+```bash
+docker exec github-logs-collector \
+  tail -n 20 /var/log/github/events.jsonl
+```
 
-When rotating the collector credential:
+Inspect collector operational telemetry:
 
-- Create the replacement credential with the minimum required permissions.
-- Confirm repository access.
-- Update the collector secret.
-- Restart or recreate the collector as required.
-- Verify API connectivity.
-- Revoke the previous credential.
-- Review logs for authentication or authorization failures.
+```bash
+docker exec github-logs-collector \
+  tail -n 20 /var/log/github/collector.jsonl
+```
 
-Never leave replaced credentials active indefinitely.
+Inspect Actions events:
 
-## Review Frequency
+```bash
+docker exec github-logs-collector \
+  grep '"dataset":"actions_' /var/log/github/events.jsonl | tail -n 20
+```
 
-Review repository security settings when:
+---
 
-- A new repository is created
-- A repository becomes public or private
-- The repository changes ownership or organization
-- GitHub introduces or changes security features
-- Collector API errors begin appearing
-- Collector credentials are rotated or replaced
-- A repository begins storing sensitive code or configuration
-- A security incident identifies a monitoring gap
+## Related Documentation
 
-## Summary
-
-For reliable security monitoring:
-
-1. Configure appropriate security defaults for future repositories.
-2. Review every existing repository separately.
-3. Enable the required security features on each repository.
-4. Grant the collector only the read permissions it requires.
-5. Ensure each monitored repository is in credential scope.
-6. Configure CodeQL or another analysis mechanism where code scanning is required.
-7. Confirm collector access by reviewing logs after configuration.
-8. Treat `SECURITY.md` as a reporting policy, not as an automated security-feature switch.
+- [Main README](../README.md)
+- [Security Policy](../SECURITY.md)
+- [Wazuh Integration](../examples/wazuh/README.md)
+- [Release History](../CHANGELOG.md)

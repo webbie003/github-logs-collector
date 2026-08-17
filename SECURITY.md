@@ -6,7 +6,8 @@ Security updates are targeted at the currently maintained release.
 
 | Version | Supported |
 |---|---|
-| 0.2.1 | Yes |
+| 0.2.2 | Yes |
+| 0.2.1 | Upgrade recommended |
 | 0.2.0 | Upgrade recommended |
 | < 0.2.0 | No |
 
@@ -14,7 +15,7 @@ Users should run the latest maintained container image whenever practical.
 
 ---
 
-# Reporting a Vulnerability
+## Reporting a Vulnerability
 
 Do not publicly disclose a suspected vulnerability before it has been reviewed.
 
@@ -35,9 +36,9 @@ Do not include authentication credentials or discovered secrets.
 
 ---
 
-# Sensitive Information
+## Sensitive Information
 
-Never include the following in public issues, pull requests, screenshots, diagnostic output, or commits:
+Never include the following in public issues, pull requests, screenshots, diagnostic output or commits:
 
 - GitHub personal access tokens
 - API keys
@@ -53,7 +54,7 @@ If a credential is exposed, revoke or rotate it immediately.
 
 ---
 
-# Security Design
+## Security Design
 
 GitHub Logs Collector follows a least-privilege and reduced-attack-surface design.
 
@@ -75,12 +76,15 @@ Recommended controls include:
 - regular image rebuilds
 - vulnerability scanning
 - explicit container version pinning
+- separate operational monitoring
+- persistent event deduplication
+- persistent repository security-state baselines
 
 ---
 
-# Alpine Runtime
+## Alpine Runtime
 
-Version `0.2.1` uses:
+Version `0.2.1` introduced:
 
 ```text
 python:3.13.15-alpine3.24
@@ -88,7 +92,7 @@ python:3.13.15-alpine3.24
 
 as the runtime base image.
 
-The change reduces the operating-system package footprint compared with the previous Debian slim runtime.
+The change reduced the operating-system package footprint compared with the previous Debian slim runtime.
 
 A smaller runtime image reduces the number of packages that require patching and the amount of unnecessary executable functionality present inside the production container.
 
@@ -102,7 +106,7 @@ to obtain current upstream security fixes.
 
 ---
 
-# Runtime Packaging Tools
+## Runtime Packaging Tools
 
 Python `pip` is required during image construction to install application dependencies.
 
@@ -135,7 +139,7 @@ This approach:
 
 ---
 
-# Container Identity
+## Container Identity
 
 The collector runs as:
 
@@ -157,7 +161,7 @@ and `/tmp` should be provided using a Docker `tmpfs`.
 
 ---
 
-# Read-Only Root Filesystem
+## Read-Only Root Filesystem
 
 The recommended Compose configuration uses:
 
@@ -169,7 +173,7 @@ Only explicitly mounted log/state volumes and the memory-backed temporary direct
 
 ---
 
-# Linux Capabilities
+## Linux Capabilities
 
 The collector requires no additional Linux capabilities.
 
@@ -182,7 +186,7 @@ cap_drop:
 
 ---
 
-# No New Privileges
+## No New Privileges
 
 Enable:
 
@@ -195,7 +199,7 @@ to prevent processes from acquiring additional privileges through executable per
 
 ---
 
-# Docker Socket
+## Docker Socket
 
 Do not mount:
 
@@ -211,7 +215,7 @@ Providing Docker socket access would significantly increase the impact of a cont
 
 ---
 
-# Network Exposure
+## Network Exposure
 
 The collector performs outbound HTTPS requests to GitHub.
 
@@ -226,7 +230,7 @@ No Docker `ports:` configuration should normally be present.
 
 ---
 
-# GitHub Credentials
+## GitHub Credentials
 
 Use a fine-grained personal access token where possible.
 
@@ -240,6 +244,7 @@ Account:
 
 Repository:
   Metadata: Read
+  Actions: Read
   Dependabot alerts: Read
   Code scanning alerts: Read
   Secret scanning alerts: Read
@@ -247,11 +252,13 @@ Repository:
 
 Restrict repository access to the intended monitoring scope.
 
+`Actions: Read` is required only when GitHub Actions telemetry is enabled.
+
 Do not grant write or administration permissions unless explicitly required by a future feature.
 
 ---
 
-# GitHub Security Features
+## GitHub Security Features
 
 This `SECURITY.md` file defines the project's vulnerability-reporting policy.
 
@@ -267,53 +274,83 @@ Features such as:
 
 must be configured independently.
 
-See:
-
-```text
-docs/GITHUB_SECURITY_SETUP.md
-```
-
-for setup guidance.
+See [docs/GITHUB_SECURITY_SETUP.md](docs/GITHUB_SECURITY_SETUP.md) for setup guidance.
 
 ---
 
-# Event Data
+## Event Data
 
 Collector JSONL output may contain security-sensitive information including:
 
 - private repository names
-- branch names
-- commit metadata
-- internal project identifiers
+- branch and default-branch names
+- commit SHA and metadata
+- workflow names
+- workflow actor and triggering actor
+- GitHub Actions job and failed-step metadata
+- repository visibility changes
 - vulnerability information
 - code scanning findings
 - secret-scanning metadata
+- original GitHub API payloads
 
-Restrict access to:
+Restrict access to both collector streams:
 
 ```text
 /var/log/github/events.jsonl
+/var/log/github/collector.jsonl
 ```
 
 and downstream SIEM storage.
 
 ---
 
-# Persistent State
+## Collector Operational Telemetry
 
-The collector stores deduplication state in:
+The collector can maintain a separate operational/security stream:
+
+```text
+/var/log/github/collector.jsonl
+```
+
+This stream may contain:
+
+- collector startup and shutdown
+- successful GitHub authentication
+- authentication failures
+- GitHub API communication failures
+- API timeouts
+- rate-limit conditions
+- polling failures
+- security collector failures
+- GitHub Actions collection failures
+- SQLite state failures
+- filesystem failures
+- successful polling summaries
+
+It does not intentionally contain the GitHub authentication token or HTTP Authorization headers.
+
+The operational stream should be protected and retained according to the same security requirements as the primary event stream.
+
+---
+
+## Persistent State
+
+The collector stores deduplication and repository security-state baselines in:
 
 ```text
 /var/lib/github-logs-collector/state.db
 ```
 
-This volume does not normally contain the GitHub authentication token but should still be protected against unnecessary modification.
+This volume does not normally contain the GitHub authentication token but should still be protected against unnecessary access or modification.
+
+Deleting the persistent state may cause previously observed events to be collected again and repository security-state baselines to be recreated.
 
 ---
 
-# Health Monitoring
+## Health Monitoring
 
-Version `0.2.1` includes a health probe that validates successful collector progress.
+Version `0.2.1` introduced a health probe that validates successful collector progress.
 
 After every successful polling cycle the application updates:
 
@@ -337,13 +374,13 @@ This detects failures where:
 - the process remains running but polling stalls
 - GitHub API failures repeatedly prevent successful cycles
 - collector state operations repeatedly fail
-- the application is alive but no longer making progress
+- the application remains alive but no longer makes useful progress
 
 The health probe operates locally and does not require the GitHub token.
 
 ---
 
-# TLS
+## TLS
 
 TLS certificate verification must remain enabled for GitHub API requests.
 
@@ -351,7 +388,7 @@ Do not disable HTTPS certificate verification to work around certificate or prox
 
 ---
 
-# Dependency Management
+## Dependency Management
 
 Application dependencies are defined in:
 
@@ -365,7 +402,7 @@ Do not install additional Python packages interactively into production containe
 
 ---
 
-# Vulnerability Scanning
+## Vulnerability Scanning
 
 Container images should be scanned before release.
 
@@ -374,17 +411,19 @@ Example:
 ```bash
 trivy image \
   --severity CRITICAL,HIGH \
-  github-logs-collector:0.2.1
+  github-logs-collector:0.2.2
 ```
 
 The `0.2.1` release candidate was tested after migration to Alpine and removal of runtime Python packaging tooling.
 
-At the time of release testing, Trivy reported:
+At the time of `0.2.1` release testing, Trivy reported:
 
 ```text
 CRITICAL: 0
 HIGH:     0
 ```
+
+The `0.2.2` image should be scanned independently before release.
 
 Scanner databases change continuously.
 
@@ -394,7 +433,7 @@ A zero-finding result must therefore not be interpreted as proof that an image i
 
 ---
 
-# Image Updates
+## Image Updates
 
 Use:
 
@@ -411,7 +450,7 @@ This ensures the current upstream base image is retrieved instead of silently re
 
 ---
 
-# Secrets in Docker
+## Secrets in Docker
 
 The GitHub token must be supplied at runtime.
 
@@ -423,7 +462,7 @@ Do not:
 - embed the token in application source
 - log the Authorization header
 
-For local/homelab deployments, protect `.env`:
+For local or homelab deployments, protect `.env`:
 
 ```bash
 chmod 600 .env
@@ -433,7 +472,57 @@ For higher-security environments, use an appropriate external secret-management 
 
 ---
 
-# Release Security Checklist
+## GitHub Actions Telemetry
+
+When GitHub Actions monitoring is enabled, the collector can record:
+
+- workflow name
+- workflow actor
+- triggering actor
+- branch or tag
+- commit SHA
+- workflow status
+- workflow conclusion
+- run number
+- run attempt
+
+Detailed job/step information is intentionally focused on abnormal workflow outcomes such as:
+
+```text
+failure
+cancelled
+timed_out
+stale
+action_required
+startup_failure
+```
+
+Raw GitHub Actions console logs are not downloaded by default.
+
+This reduces unnecessary data collection and avoids ingesting large quantities of potentially sensitive build output.
+
+---
+
+## Repository Security-State Monitoring
+
+The collector intentionally limits repository security-state monitoring to:
+
+```text
+visibility
+private/public state
+archived/unarchived state
+default branch
+```
+
+The first observation creates a persistent baseline.
+
+Subsequent changes are written as security-relevant events with before/after values.
+
+Popularity and project-analytics counters such as stars, watchers, open-issue counts and fork counts are intentionally not monitored as security-state events.
+
+---
+
+## Release Security Checklist
 
 Before publishing a release:
 
@@ -447,9 +536,14 @@ Before publishing a release:
 - [ ] Confirm pip is absent from the runtime image
 - [ ] Confirm application imports succeed
 - [ ] Confirm SQLite state persists
-- [ ] Confirm JSONL output works
+- [ ] Confirm event deduplication works
+- [ ] Confirm repository security-state baselines persist
+- [ ] Confirm `/var/log/github/events.jsonl` is written
+- [ ] Confirm `/var/log/github/collector.jsonl` is written
 - [ ] Confirm successful-poll timestamp updates
 - [ ] Confirm Docker health status becomes healthy
+- [ ] Confirm GitHub Actions events are collected when enabled
+- [ ] Confirm security-alert lifecycle events are collected
 - [ ] Run Trivy vulnerability scanning
 - [ ] Run Trivy secret scanning
 - [ ] Check source control for accidentally committed tokens
@@ -458,7 +552,7 @@ Before publishing a release:
 
 ---
 
-# Security Is Layered
+## Security Is Layered
 
 A clean vulnerability scan is only one control.
 
