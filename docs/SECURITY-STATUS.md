@@ -15,8 +15,8 @@ No CRITICAL or HIGH vulnerabilities were detected in the current container image
 
 | Property | Value |
 |:---|:---|
-| Scan time | `2026-08-18 03:46:16 UTC` |
-| Commit | `a67c7d860f36ee430efa5da1dadd55a53938c8cd` |
+| Scan time | `2026-08-18 04:10:49 UTC` |
+| Commit | `017075dba40a8497e751f127f60d9644c01495bb` |
 | Scanner | `Trivy` |
 | Scan type | Container image vulnerability scan |
 | Policy gate | `CRITICAL,HIGH` |
@@ -45,13 +45,18 @@ detects one or more `CRITICAL` or `HIGH` vulnerabilities.
 `MEDIUM`, `LOW`, and `UNKNOWN` findings are reported for
 visibility but do not currently block publication.
 
+The repository is also scanned separately for accidentally
+committed secrets such as credentials, API tokens, private
+keys, and other sensitive values.
+
 Vulnerability data changes over time as scanner databases and
 upstream advisories are updated. A clean result is therefore
 a point-in-time assessment rather than a permanent guarantee.
 
 ## Detailed Results
 
-High and Critical Trivy findings are uploaded to the
+High and Critical container vulnerability findings and
+repository secret findings are uploaded separately to the
 GitHub repository Security / Code Scanning interface.
 
-[View this workflow run](https://github.com/webbie003/github-logs-collector/actions/runs/32096594240)
+[View this workflow run](https://github.com/webbie003/github-logs-collector/actions/runs/32098096053)
