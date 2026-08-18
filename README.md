@@ -6,9 +6,9 @@
   <a href="https://github.com/webbie003/github-logs-collector/releases/latest"><img src="https://img.shields.io/github/v/release/webbie003/github-logs-collector?label=version" alt="Release"></a>&nbsp;
   <a href="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml"><img src="https://github.com/webbie003/github-logs-collector/actions/workflows/docker-publish.yml/badge.svg" alt="Build and Publishe"></a>&nbsp;
   <a href="docs/SECURITY-STATUS.md"><img src="https://img.shields.io/badge/container%20security-Trivy-informational?logo=aqua" alt="Container Security"></a>&nbsp;
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/webbie003/github-logs-collector" alt="License"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.13-blue?logo=python" alt="Python"></a>&nbsp;
   <a href="https://alpinelinux.org/"><img src="https://img.shields.io/badge/alpine-3.24-blue?logo=alpinelinux" alt="Alpine"></a>&nbsp;
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/webbie003/github-logs-collector" alt="License"></a>
 </p>
 
 A hardened GitHub REST API poller that turns personal account activity and security telemetry into normalised, deduplicated, SIEM-ready JSONL for monitoring, detection, and investigation.
