@@ -1174,7 +1174,7 @@ def collect_account_events() -> int:
                             "name"
                         ),
 
-		    "repository":
+		            "repository":
                         repo.get(
                             "name"
                         ),
@@ -1417,8 +1417,8 @@ def collect_security_endpoint(
                     "event":
                         alert_type,
 
-		    "repo":
-			repository_name,
+		            "repo":
+			            repository_name,
 
                     "repository":
                         repository_name,
@@ -2194,9 +2194,9 @@ def collect_repository_security_state(
         dataset="repository_security_state",
         github={
             "repo":
-		full_name,
+		        full_name,
 
-	    "repository":
+	        "repository":
                 full_name,
 
             "changes":
