@@ -15,8 +15,8 @@ One or more CRITICAL or HIGH vulnerabilities were detected.
 
 | Property | Value |
 |:---|:---|
-| Scan time | `2026-09-07 07:30:20 UTC` |
-| Commit | `2738679049ddba35a94c9b8bd80f24943c987651` |
+| Scan time | `2026-09-14 08:04:06 UTC` |
+| Commit | `e38a2f40c929821c8586aea4f667b7278db2a5eb` |
 | Scanner | `Trivy` |
 | Scan type | Container image vulnerability scan |
 | Policy gate | `CRITICAL,HIGH` |
@@ -59,4 +59,4 @@ High and Critical container vulnerability findings and
 repository secret findings are uploaded separately to the
 GitHub repository Security / Code Scanning interface.
 
-[View this workflow run](https://github.com/webbie003/github-logs-collector/actions/runs/34095677374)
+[View this workflow run](https://github.com/webbie003/github-logs-collector/actions/runs/34820748759)
