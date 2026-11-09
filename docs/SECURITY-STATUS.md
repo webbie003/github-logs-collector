@@ -7,16 +7,16 @@ Manual edits may be overwritten.
 
 ## Current Status
 
-**Status:** `PASS`
+**Status:** `ATTENTION REQUIRED`
 
-No CRITICAL or HIGH vulnerabilities were detected in the current container image.
+One or more CRITICAL or HIGH vulnerabilities were detected.
 
 ## Latest Scan
 
 | Property | Value |
 |:---|:---|
-| Scan time | `2026-11-02 09:50:46 UTC` |
-| Commit | `56eecf3d6d26b641b82fddc87f5822548cd9c1dc` |
+| Scan time | `2026-11-09 10:09:08 UTC` |
+| Commit | `9e659ba044baa54ba44f9320bddec2d54d6afcf3` |
 | Scanner | `Trivy` |
 | Scan type | Container image vulnerability scan |
 | Policy gate | `CRITICAL,HIGH` |
@@ -26,11 +26,11 @@ No CRITICAL or HIGH vulnerabilities were detected in the current container image
 | Severity | Findings |
 |:---|---:|
 | Critical | 0 |
-| High | 0 |
+| High | 3 |
 | Medium | 1 |
 | Low | 0 |
-| Unknown | 2 |
-| **Total** | **3** |
+| Unknown | 0 |
+| **Total** | **4** |
 
 ## Scanned Targets
 
@@ -59,4 +59,4 @@ High and Critical container vulnerability findings and
 repository secret findings are uploaded separately to the
 GitHub repository Security / Code Scanning interface.
 
-[View this workflow run](https://github.com/webbie003/github-logs-collector/actions/runs/41423803591)
+[View this workflow run](https://github.com/webbie003/github-logs-collector/actions/runs/42598580999)
